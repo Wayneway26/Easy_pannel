@@ -18,3 +18,10 @@ desktop.ini
 
 # 运行日志
 watchdog.log
+dock/dock.log
+dock/dock.pid
+
+# Dock 运行时产物（图标缓存按机器生成，不入库）
+dock/icons/
+dock/shot.png
+dock/config.json
