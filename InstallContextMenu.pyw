@@ -37,12 +37,36 @@ def desktop_dir():
     return buf.value
 
 
-def action_cmd(action):
+def pythonw_path():
+    """优先使用当前解释器同目录的 pythonw，找不到再退回默认路径"""
+    exe = sys.executable or ""
+    low = exe.lower()
+    if low.endswith("python.exe"):
+        cand = exe[:-len("python.exe")] + "pythonw.exe"
+        if os.path.exists(cand):
+            return cand
+    if low.endswith("pythonw.exe") and os.path.exists(exe):
+        return exe
+    return PYTHONW
+
+
+def env_form(path):
+    """把绝对路径转成环境变量形式；不在系统盘/用户目录下时保持原样。
+
+    .lnk 的目标只有写成 %SystemDrive%\\... 这类形式才能被 Shell 正确解析，
+    但**必须先确认路径真在该前缀之下**，否则会切出错误路径。
+    """
+    drive = os.environ.get("SystemDrive", "C:")
+    if path.lower().startswith(drive.lower() + "\\"):
+        return "%SystemDrive%" + path[len(drive):]
     profile = os.environ.get("USERPROFILE", "").rstrip("\\")
-    script = ACTION
-    if profile and script.lower().startswith(profile.lower()):
-        script = "%USERPROFILE%" + script[len(profile):]
-    return '"%s" "%s" %s' % (PYTHONW, script, action)
+    if profile and path.lower().startswith(profile.lower() + "\\"):
+        return "%USERPROFILE%" + path[len(profile):]
+    return path
+
+
+def action_cmd(action):
+    return '"%s" "%s" %s' % (env_form(pythonw_path()), env_form(ACTION), action)
 
 
 def install():
@@ -61,8 +85,8 @@ def install():
     winx = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(winx)
     lnk = os.path.join(desktop_dir(), "一键展开托盘图标.lnk")
-    winx.create_shortcut(lnk, "%SystemDrive%\\MiniConda\\pythonw.exe",
-                         '"%USERPROFILE%' + ACTION[len(os.environ["USERPROFILE"]):] + '" expand',
+    winx.create_shortcut(lnk, env_form(pythonw_path()),
+                         '"%s" expand' % env_form(ACTION),
                          ICON, "一键展开所有托盘图标到任务栏")
     made.append("桌面快捷方式")
     return made

@@ -200,7 +200,7 @@ Explorer 退出时会把**内存中的托盘状态回写注册表**。所以：
 ## 文件说明
 
 ```
-tray-helper/
+Easy_pannel/
 ├── 启动托盘助手.bat          GUI 启动器（自动找可用的 Python）
 ├── TrayGUI.pyw               主程序：界面 + 注册表读写 + 重启逻辑
 ├── TrayAction.pyw            动作脚本：给菜单入口调用（expand / collapse）
