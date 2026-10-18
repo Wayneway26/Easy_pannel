@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 打包产物
+dist/
+build/
+*.spec
+TrayAllShow.exe
+
+# IDE / 系统
+.vs/
+.vscode/
+*.user
+Thumbs.db
+desktop.ini
