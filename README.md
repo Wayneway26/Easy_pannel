@@ -17,7 +17,11 @@ Windows 小工具集：绿色免安装、纯本地运行、只改当前用户设
 一个窗口管两件事。视觉照 Windows 11「设置」做：`#F3F3F3` 底、白色卡片承载每组设置、
 `#0067C0` 强调色、6px 圆角、**组标题在卡片外面上方**、卡片内「左标题 + 灰描述 / 右侧控件」
 的设置行配 1px 分割线、左侧导航选中项带强调色竖条——也就是 WinUI 3 的 Fluent Design，
-和 AutoDarkMode 那类原生应用摆在一起观感是同一套。全部用 tkinter 的 Canvas 自绘，
+和 AutoDarkMode 那类原生应用摆在一起观感是同一套。
+
+字体和图标也用 Windows 11 自带的那一套，不是模拟：正文 **Segoe UI Variable Text**、
+标题 **Segoe UI Variable Display**（中文自动回退微软雅黑）、图标 **Segoe Fluent Icons**
+（导航、开关、行内按钮全是真字形，不是手绘几何）。全部用 tkinter 的 Canvas 自绘，
 没有引入 WinUI 或任何第三方库。
 
 | 页面 | 能做什么 |

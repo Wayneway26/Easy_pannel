@@ -37,7 +37,7 @@ DOCK_PID = os.path.join(DOCK_DIR, "dock.pid")
 TRAY_SCRIPT = os.path.join(HERE, "TrayGUI.pyw")
 ICON_CACHE = os.path.join(HERE, "cache", "panel-icons")
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 # ---------------------------------------------------------------- 调色板
 MAGIC = "#010203"            # 色键：窗口圆角外的部分靠它抠成真透明
@@ -63,7 +63,9 @@ SEG_BG = "#F0F0F0"
 LOG_BG = "#FAFAFA"
 LOG_FG = "#2B2B2B"
 
-UI = "Microsoft YaHei UI"
+UI = "Segoe UI Variable Text"          # Win11 正文：西文原生，中文自动回退雅黑
+DISPLAY = "Segoe UI Variable Display"  # Win11 标题
+ICONS = "Segoe Fluent Icons"           # Win11 图标字形
 MONO = "Consolas"
 
 # ---------------------------------------------------------------- 布局
@@ -73,9 +75,25 @@ CX0, CX1 = 232, 844          # 内容区：232 .. 844（宽 612）
 TITLE_H = 52
 
 
-def f(size, weight="normal", family=UI):
-    """负数字号 = 像素，跨缩放看起来更稳"""
-    return (family, -int(size), weight)
+def f(size, weight="normal", family=None):
+    """负数字号 = 像素，跨缩放看起来更稳。family 传 None 时动态取当前 UI 字体。"""
+    return (family or UI, -int(size), weight)
+
+
+def ensure_fonts():
+    """Win10 上没有 Variable / Fluent Icons，回退到上一代，别显示成方块"""
+    global UI, DISPLAY, ICONS
+    try:
+        import tkinter.font as tkfont
+        fams = set(tkfont.families())
+    except Exception:                                    # noqa: BLE001
+        return
+    if UI not in fams:
+        UI = "Segoe UI" if "Segoe UI" in fams else "Microsoft YaHei UI"
+    if DISPLAY not in fams:
+        DISPLAY = UI
+    if ICONS not in fams:
+        ICONS = "Segoe MDL2 Assets"
 
 
 # ---------------------------------------------------------------- 基础图元
@@ -204,13 +222,11 @@ class TitleBtn(Widget):
                                           outline="", tags="chrome")
         cx, cy = x + 23, y + 16
         if self.danger:
-            self.marks = [cv.create_line(cx - 5, cy - 5, cx + 5, cy + 5, fill=TEXT,
-                                         width=1.1, tags="chrome"),
-                          cv.create_line(cx - 5, cy + 5, cx + 5, cy - 5, fill=TEXT,
-                                         width=1.1, tags="chrome")]
+            self.marks = [cv.create_text(cx, cy, text="\ue8bb", fill=TEXT,
+                                         font=(ICONS, -11), tags="chrome")]
         else:
-            self.marks = [cv.create_line(cx - 5, cy, cx + 5, cy, fill=TEXT,
-                                         width=1.1, tags="chrome")]
+            self.marks = [cv.create_text(cx, cy, text="\ue921", fill=TEXT,
+                                         font=(ICONS, -11), tags="chrome")]
 
     def hover(self, on):
         if self.danger:
@@ -392,7 +408,7 @@ class AppRow(Widget):
 
 
 class SmallIcon(Widget):
-    """行内的小图标按钮：↑ ↓ ×"""
+    """行内的小图标按钮：↑ ↓ 🗑"""
 
     def __init__(self, cv, x, y, size, glyph, cmd):
         self.cv, self.cmd = cv, cmd
@@ -401,17 +417,9 @@ class SmallIcon(Widget):
                                     fill="", outline="", tags="content")
         cx, cy = x + size / 2.0, y + size / 2.0
         col = MUTED if glyph != "x" else FAINT
-        if glyph == "up":
-            self.mark = cv.create_line(cx, cy + 4, cx, cy - 4, fill=col, width=1.2,
-                                       arrow="last", arrowshape=(5, 6, 2.5), tags="content")
-        elif glyph == "down":
-            self.mark = cv.create_line(cx, cy - 4, cx, cy + 4, fill=col, width=1.2,
-                                       arrow="last", arrowshape=(5, 6, 2.5), tags="content")
-        else:
-            self.mark = [cv.create_line(cx - 3.5, cy - 3.5, cx + 3.5, cy + 3.5, fill=col,
-                                        width=1.2, tags="content"),
-                         cv.create_line(cx - 3.5, cy + 3.5, cx + 3.5, cy - 3.5, fill=col,
-                                        width=1.2, tags="content")]
+        ch = {"up": "\ue74a", "down": "\ue74b", "x": "\ue74d"}.get(glyph, "\ue711")
+        self.mark = cv.create_text(cx, cy, text=ch, fill=col,
+                                   font=(ICONS, -11), tags="content")
 
     def hover(self, on):
         self.cv.itemconfig(self.bg, fill="#E8E8E8" if on else "")
@@ -421,34 +429,19 @@ class SmallIcon(Widget):
 
 
 def nav_icon(cv, cx, cy, kind, color):
-    """导航图标全部几何自绘，不依赖图标字体。
-    返回 (实心图形, 描边图形) —— 两类要用 itemconfig 的不同字段改色。"""
-    filled, stroked = [], []
-    if kind == "dock":
-        for dx in (-10, -3, 4):
-            filled.append(cv.create_polygon(round_rect(cx + dx, cy - 8, cx + dx + 6, cy, 1.5),
-                                            fill=color, outline="", tags="ui"))
-        filled.append(cv.create_polygon(round_rect(cx - 10, cy + 4, cx + 10, cy + 7, 1.5),
-                                        fill=color, outline="", tags="ui"))
-    elif kind == "tray":
-        filled.append(cv.create_polygon([cx - 7, cy - 7, cx + 7, cy - 7, cx, cy],
-                                        fill=color, outline="", tags="ui"))
-        for dx in (-6, 0, 6):
-            filled.append(cv.create_oval(cx + dx - 1.5, cy + 4, cx + dx + 1.5, cy + 7,
-                                         fill=color, outline="", tags="ui"))
-    else:                                              # info：圆环 + 点 + 竖线
-        stroked.append(cv.create_oval(cx - 8, cy - 8, cx + 8, cy + 8,
-                                      fill="", outline=color, width=1.35, tags="ui"))
-        filled.append(cv.create_oval(cx - 1.3, cy - 5.6, cx + 1.3, cy - 3.0,
-                                     fill=color, outline="", tags="ui"))
-        filled.append(cv.create_line(cx, cy - 1.4, cx, cy + 5, fill=color, width=1.5, tags="ui"))
-    return filled, stroked
+    """导航图标用 Segoe Fluent Icons 字形，和 Win11 设置页同一套图标。
+    返回值保持 (实心图形, 描边图形) 的结构，方便上层统一改色。"""
+    glyph = {"dock": "\ue71d", "tray": "\ue7f4", "info": "\ue946"}.get(kind, "\ue946")
+    item = cv.create_text(cx, cy, text=glyph, fill=color,
+                          font=(ICONS, -16), tags="ui")
+    return [item], []
 
 
 # ---------------------------------------------------------------- 主面板
 class Panel:
     def __init__(self, root):
         self.root = root
+        ensure_fonts()
         self.dock = load_module(DOCK_SCRIPT, "easy_dock")
         self.tray = load_module(TRAY_SCRIPT, "tray_core")
         self.dock_cfg = self._read_dock_cfg()
@@ -535,8 +528,8 @@ class Panel:
         cv.create_polygon(round_rect(25, 21, 31, 27, 1.5), fill="#FFFFFF", outline="", tags="chrome")
         cv.create_polygon(round_rect(25, 30, 31, 34, 1.2), fill="#FFFFFF", outline="", tags="chrome")
         cv.create_polygon(round_rect(33, 21, 35, 34, 1.0), fill="#FFFFFF", outline="", tags="chrome")
-        cv.create_text(50, 26, text="EasyPanel", anchor="w", fill=TEXT, font=f(13, "bold"),
-                       tags="chrome")
+        cv.create_text(50, 26, text="EasyPanel", anchor="w", fill=TEXT,
+                       font=f(13.5, "bold", DISPLAY), tags="chrome")
         cv.create_text(W - 116, 26, text="v" + VERSION, anchor="e", fill=FAINT,
                        font=f(10.5), tags="chrome")
 
@@ -582,22 +575,23 @@ class Panel:
                           outline=CARD_LINE, width=1, tags="content")
         if title:
             cv.create_text(CX0 + 2, y - 16, text=title, anchor="w", fill=TEXT,
-                           font=f(13, "bold"), tags="content")
+                           font=f(13.5, "bold", DISPLAY), tags="content")
         return y
 
-    def label(self, x, y, text, size=13, color=TEXT, weight="normal", anchor="w"):
+    def label(self, x, y, text, size=13.5, color=TEXT, weight="normal", anchor="w"):
         return self.cv.create_text(x, y, text=text, anchor=anchor, fill=color,
                                    font=f(size, weight), tags="content")
 
     def page_head(self, title, subtitle):
-        self.label(CX0 - 4, 78, title, 26, TEXT, "bold")
+        self.cv.create_text(CX0 - 4, 78, text=title, anchor="w", fill=TEXT,
+                            font=f(26, "bold", DISPLAY), tags="content")
         self.label(CX0 - 4, 108, subtitle, 12, MUTED)
 
     def row_text(self, y, title, desc=None):
         """设置行左侧的两行文字（行高 60）"""
-        self.label(CX0 + 18, y + 24, title, 13.2)
+        self.label(CX0 + 18, y + 24, title, 13.5)
         if desc:
-            self.label(CX0 + 18, y + 43, desc, 11.2, FAINT)
+            self.label(CX0 + 18, y + 43, desc, 12, MUTED)
 
     def hairline(self, y):
         self.cv.create_line(CX0 + 18, y, CX1 - 18, y, fill=HAIRLINE, tags="content")
@@ -612,11 +606,8 @@ class Panel:
         self.card(126, 80)
         cv.create_polygon(round_rect(CX0 + 18, 144, CX0 + 62, 188, 11),
                           fill="#2B2B31", outline="", tags="content")
-        for i in range(3):
-            cv.create_polygon(round_rect(CX0 + 26 + i * 11, 158, CX0 + 34 + i * 11, 174, 2),
-                              fill="#FFFFFF", outline="", tags="content")
-        cv.create_polygon(round_rect(CX0 + 26, 178, CX0 + 54, 181, 1.5),
-                          fill="#7A7A85", outline="", tags="content")
+        cv.create_text(CX0 + 40, 166, text="\ue71d", fill="#FFFFFF",
+                       font=(ICONS, -20), tags="content")
         alive = self.dock_pid() is not None
         n = len(cfg.get("items") or [])
         self.label(CX0 + 78, 156, "Easy Dock", 14, TEXT, "bold")
@@ -669,7 +660,7 @@ class Panel:
         row_h = 34
         if not items:
             self.label(CX0 + 18, 500, "还没有添加任何应用", 12.5, MUTED)
-            self.label(CX0 + 18, 522, "点下面的「添加应用…」把常用的程序放进来", 11.2, FAINT)
+            self.label(CX0 + 18, 522, "点下面的「添加应用…」把常用的程序放进来", 12, MUTED)
         for i, _item in enumerate(items[:max_rows]):
             self.widgets.append(AppRow(cv, CX0 + 10, top + i * row_h, CX1 - CX0 - 20,
                                        row_h, self, i))
@@ -709,8 +700,8 @@ class Panel:
 
         # 操作卡
         self.card(240, 92, "批量操作")
-        self.label(CX0 + 18, 264, "批量设置所有托盘图标的显示状态", 13)
-        self.label(CX0 + 18, 283, "会先结束 Explorer，写入注册表后再启动，避免退出时覆盖", 11.2, FAINT)
+        self.label(CX0 + 18, 264, "批量设置所有托盘图标的显示状态", 13.5)
+        self.label(CX0 + 18, 283, "会先结束 Explorer，写入注册表后再启动，避免退出时覆盖", 12, MUTED)
         self.widgets.append(Btn(cv, CX0 + 18, 294, 132, 30, "一键全部展开",
                                 lambda: self.tray_apply(1), "primary", 4, 12.5))
         self.widgets.append(Btn(cv, CX0 + 160, 294, 132, 30, "一键恢复收纳",
@@ -718,8 +709,8 @@ class Panel:
 
         # 开关
         self.card(370, 60, "行为")
-        self.label(CX0 + 18, 394, "执行后重启 Explorer 使设置生效", 13)
-        self.label(CX0 + 18, 413, "关闭时只写注册表，需要手动重启资源管理器", 11.2, FAINT)
+        self.label(CX0 + 18, 394, "执行后重启 Explorer 使设置生效", 13.5)
+        self.label(CX0 + 18, 413, "关闭时只写注册表，需要手动重启资源管理器", 12, MUTED)
         self.sw_restart = Switch(cv, CX1 - 18 - 40, 390, self.restart_after,
                                  lambda v: setattr(self, "restart_after", v))
         self.widgets.append(self.sw_restart)
@@ -750,16 +741,13 @@ class Panel:
         self.card(126, 124)
         cv.create_polygon(round_rect(CX0 + 18, 144, CX0 + 74, 200, 12),
                           fill=ACCENT, outline="", tags="content")
-        cv.create_polygon(round_rect(CX0 + 32, 158, CX0 + 46, 172, 3), fill="#FFFFFF",
-                          outline="", tags="content")
-        cv.create_polygon(round_rect(CX0 + 51, 158, CX0 + 63, 172, 3), fill="#FFFFFF",
-                          outline="", tags="content")
-        cv.create_polygon(round_rect(CX0 + 32, 177, CX0 + 63, 184, 2), fill="#FFFFFF",
-                          outline="", tags="content")
-        self.label(CX0 + 90, 156, "EasyPanel", 18, TEXT, "bold")
+        cv.create_text(CX0 + 47, 172, text="\ue71d", fill="#FFFFFF",
+                       font=(ICONS, -30), tags="content")
+        self.cv.create_text(CX0 + 90, 156, text="EasyPanel", anchor="w", fill=TEXT,
+                            font=f(19, "bold", DISPLAY), tags="content")
         self.label(CX0 + 90, 180, "版本 " + VERSION + " · MIT License", 11.5, MUTED)
-        self.label(CX0 + 90, 200, "Python 3 + tkinter，无第三方依赖", 11.2, FAINT)
-        self.label(CX0 + 90, 220, "github.com/Wayneway26/Easy_pannel", 11.2, ACCENT)
+        self.label(CX0 + 90, 200, "Python 3 + tkinter，无第三方依赖", 12, MUTED)
+        self.label(CX0 + 90, 220, "github.com/Wayneway26/Easy_pannel", 11.5, ACCENT)
         self.widgets.append(Btn(cv, CX1 - 18 - 108, 142, 108, 32, "打开仓库",
                                 self.open_repo, "secondary", 4, 12.5))
 
@@ -769,8 +757,8 @@ class Panel:
                 ("紧急恢复", "桌面黑屏、任务栏消失时双击即可恢复 explorer", "恢复桌面.bat")]
         for i, (name, desc, path) in enumerate(rows):
             y = 312 + i * 52
-            self.label(CX0 + 18, y, name, 12.8, TEXT, "bold")
-            self.label(CX0 + 18, y + 19, desc, 11.2, MUTED)
+            self.label(CX0 + 18, y, name, 13, TEXT, "bold")
+            self.label(CX0 + 18, y + 19, desc, 12, MUTED)
             self.label(CX1 - 18, y + 9, path, 10.5, FAINT, anchor="e")
             if i < len(rows) - 1:
                 self.hairline(y + 42)
@@ -785,7 +773,7 @@ class Panel:
             y = 518 + i * 30
             cv.create_oval(CX0 + 19, y - 3, CX0 + 25, y + 3, fill=ACCENT, outline="",
                            tags="content")
-            self.label(CX0 + 36, y, s, 11.8, TEXT)
+            self.label(CX0 + 36, y, s, 12, TEXT)
         self.label(CX0 + 18, 704, "© 2026 Wayneway26", 10.5, FAINT)
 
     # ---------------------------------------------------------- 交互
