@@ -36,7 +36,8 @@ ICON_DIR = os.path.join(HERE, "icons")
 LOG_PATH = os.path.join(HERE, "dock.log")
 
 MAGIC = "#010203"          # 色键：这个颜色会被系统整块抠掉
-SCALES = (1.0, 1.25, 1.5, 1.75)
+# 这些倍数的 scale/2 都能写成小分母分数，zoom+subsample 不丢精度
+SCALES = (1.0, 1.25, 1.375, 1.5, 1.75, 2.0)
 
 u32 = ctypes.windll.user32
 gdi = ctypes.windll.gdi32
@@ -78,10 +79,17 @@ DEFAULT_CONFIG = {
     "gap": 10,
     "padding": 10,
     "radius": 18,
+    "zoom": 1.75,              # 悬停时放大到几倍（1.5 / 1.75 / 2.0）
     "bg": "#1F1F24",
     "border": "#3A3A42",
     "topmost": True,
     "items": [],
+}
+
+# 面板里可切换的两种底色
+THEMES = {
+    "dark": {"bg": "#1F1F24", "border": "#3A3A42"},
+    "light": {"bg": "#F7F7F9", "border": "#D8D8DE"},
 }
 
 
@@ -331,8 +339,10 @@ class Dock:
         self.gap = int(cfg["gap"])
         self.pad = int(cfg["padding"])
         self.radius = int(cfg["radius"])
+        self.zoom = max(1.05, float(cfg.get("zoom", 1.75)))
         self.base_h = self.icon + self.pad * 2
-        self.grow = int(self.icon * 0.75)
+        # 放大时图标顶部会溢出面板，窗口要留够高度
+        self.grow = int(self.icon * (self.zoom - 1)) + 2
         # 放大时图标会溢出面板，窗口左右要留余量，否则边缘图标被裁掉
         self.slack = int(self.icon * 0.9)
 
@@ -498,7 +508,8 @@ class Dock:
                 self.targets[i] = 1.0
             else:
                 d = abs(i - index)
-                self.targets[i] = {0: 1.75, 1: 1.25}.get(d, 1.0)
+                near = 1.0 + (self.zoom - 1.0) / 2.0
+                self.targets[i] = {0: self.zoom, 1: near}.get(d, 1.0)
         if not self.animating:
             self.animating = True
             self._animate()

@@ -25,3 +25,8 @@ dock/dock.pid
 dock/icons/
 dock/shot.png
 dock/config.json
+
+# 面板运行时产物
+cache/
+_shots.py
+_*.png
