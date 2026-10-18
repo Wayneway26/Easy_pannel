@@ -339,7 +339,7 @@ class NavItem(Widget):
                                      fill="", outline="", tags="ui")
         self.icon = nav_icon(cv, x + 28, y + h / 2.0, icon, MUTED)
         self.label = cv.create_text(x + 48, y + h / 2.0, text=label, anchor="w",
-                                    fill=TEXT, font=f(13), tags="ui")
+                                    fill=TEXT, font=f(13.5), tags="ui")
         self.active = False
 
     def set_active(self, on):
@@ -549,12 +549,12 @@ class Panel:
         for key, label, icon in (("dock", "Dock", "dock"),
                                  ("tray", "托盘图标", "tray"),
                                  ("about", "关于", "info")):
-            item = NavItem(cv, NAV_X, y, NAV_W, 40, key, label, icon, self.show_page)
+            item = NavItem(cv, NAV_X, y, NAV_W, 42, key, label, icon, self.show_page)
             self.nav[key] = item
             self.chrome_widgets.append(item)
-            y += 42
+            y += 44
 
-        cv.create_line(NAV_X + 12, 210, NAV_X + NAV_W - 12, 210, fill="#E4E4E4", tags="ui")
+        cv.create_line(NAV_X + 12, 212, NAV_X + NAV_W - 12, 212, fill="#E4E4E4", tags="ui")
 
     # -- 页面切换 --------------------------------------------------
     def show_page(self, key):
@@ -576,11 +576,12 @@ class Panel:
 
     # -- 通用绘制小工具 --------------------------------------------
     def card(self, y, h, title=None, pad=18):
+        """一张设置卡片。title 按 WinUI 规范画在卡片**外面**上方。"""
         cv = self.cv
-        cv.create_polygon(round_rect(CX0, y, CX1, y + h, 8), fill=CARD,
+        cv.create_polygon(round_rect(CX0, y, CX1, y + h, 6), fill=CARD,
                           outline=CARD_LINE, width=1, tags="content")
         if title:
-            cv.create_text(CX0 + pad, y + 24, text=title, anchor="w", fill=TEXT,
+            cv.create_text(CX0 + 2, y - 16, text=title, anchor="w", fill=TEXT,
                            font=f(13, "bold"), tags="content")
         return y
 
@@ -589,14 +590,14 @@ class Panel:
                                    font=f(size, weight), tags="content")
 
     def page_head(self, title, subtitle):
-        self.label(CX0 - 4, 80, title, 23, TEXT, "bold")
-        self.label(CX0 - 4, 106, subtitle, 11.8, MUTED)
+        self.label(CX0 - 4, 78, title, 26, TEXT, "bold")
+        self.label(CX0 - 4, 108, subtitle, 12, MUTED)
 
     def row_text(self, y, title, desc=None):
-        """设置行左侧的两行文字"""
-        self.label(CX0 + 18, y + 21, title, 13)
+        """设置行左侧的两行文字（行高 60）"""
+        self.label(CX0 + 18, y + 24, title, 13.2)
         if desc:
-            self.label(CX0 + 18, y + 40, desc, 11.2, FAINT)
+            self.label(CX0 + 18, y + 43, desc, 11.2, FAINT)
 
     def hairline(self, y):
         self.cv.create_line(CX0 + 18, y, CX1 - 18, y, fill=HAIRLINE, tags="content")
@@ -630,41 +631,41 @@ class Panel:
         self.widgets.append(self.btn_dock)
 
         # --- 外观卡 ---
-        self.card(218, 206, "外观")
-        rows = 252
+        self.card(244, 180, "外观")
+        rows = 244
         self.row_text(rows, "图标大小", "每个图标的边长，40–72 px")
-        self.step_size = Stepper(cv, CX1 - 138, rows + 12, 120, 32,
+        self.step_size = Stepper(cv, CX1 - 138, rows + 14, 120, 32,
                                  "%d px" % cfg["icon_size"],
                                  lambda: self.bump("icon_size", -4),
                                  lambda: self.bump("icon_size", 4))
         self.widgets.append(self.step_size)
-        self.hairline(rows + 56)
+        self.hairline(rows + 60)
 
-        rows += 56
+        rows += 60
         self.row_text(rows, "悬停放大", "鼠标移上去时放大的倍数")
-        self.step_zoom = Stepper(cv, CX1 - 138, rows + 12, 120, 32,
+        self.step_zoom = Stepper(cv, CX1 - 138, rows + 14, 120, 32,
                                  "%.2f×" % float(cfg.get("zoom", 1.75)),
                                  lambda: self.bump("zoom", -0.25),
                                  lambda: self.bump("zoom", 0.25))
         self.widgets.append(self.step_zoom)
-        self.hairline(rows + 56)
+        self.hairline(rows + 60)
 
-        rows += 56
+        rows += 60
         self.row_text(rows, "Dock 主题", "深色更接近 iOS 原生气质")
         theme = "dark" if str(cfg.get("bg", "")).upper() in ("#1F1F24", "#1F1F1F") else "light"
-        self.seg_theme = Seg(cv, CX1 - 146, rows + 12, 128, 32, ["深色", "浅色"],
+        self.seg_theme = Seg(cv, CX1 - 146, rows + 14, 128, 32, ["深色", "浅色"],
                              0 if theme == "dark" else 1, self.set_theme)
         self.widgets.append(self.seg_theme)
 
         # --- 应用列表 ---
-        self.card(436, 246, "Dock 中的应用")
+        self.card(462, 220, "Dock 中的应用")
         items = cfg.get("items") or []
-        self.label(CX1 - 18, 460,
+        self.label(CX1 - 18, 446,
                    ("%d 个 · 显示前 6 个" % len(items)) if len(items) > 6
                    else "%d 个" % len(items), 11, FAINT, anchor="e")
 
         max_rows = 6
-        top = 476
+        top = 470
         row_h = 34
         if not items:
             self.label(CX0 + 18, 500, "还没有添加任何应用", 12.5, MUTED)
@@ -707,24 +708,24 @@ class Panel:
                            font=f(11.5), tags="content")
 
         # 操作卡
-        self.card(214, 92)
-        self.label(CX0 + 18, 238, "批量设置所有托盘图标的显示状态", 13)
-        self.label(CX0 + 18, 258, "会先结束 Explorer，写入注册表后再启动，避免退出时覆盖", 11.2, FAINT)
-        self.widgets.append(Btn(cv, CX0 + 18, 270, 132, 30, "一键全部展开",
+        self.card(240, 92, "批量操作")
+        self.label(CX0 + 18, 264, "批量设置所有托盘图标的显示状态", 13)
+        self.label(CX0 + 18, 283, "会先结束 Explorer，写入注册表后再启动，避免退出时覆盖", 11.2, FAINT)
+        self.widgets.append(Btn(cv, CX0 + 18, 294, 132, 30, "一键全部展开",
                                 lambda: self.tray_apply(1), "primary", 4, 12.5))
-        self.widgets.append(Btn(cv, CX0 + 160, 270, 132, 30, "一键恢复收纳",
+        self.widgets.append(Btn(cv, CX0 + 160, 294, 132, 30, "一键恢复收纳",
                                 lambda: self.tray_apply(0), "secondary", 4, 12.5))
 
         # 开关
-        self.card(318, 56)
-        self.label(CX0 + 18, 338, "执行后重启 Explorer 使设置生效", 13)
-        self.label(CX0 + 18, 356, "关闭时只写注册表，需要手动重启资源管理器", 11.2, FAINT)
-        self.sw_restart = Switch(cv, CX1 - 18 - 40, 340, self.restart_after,
+        self.card(370, 60, "行为")
+        self.label(CX0 + 18, 394, "执行后重启 Explorer 使设置生效", 13)
+        self.label(CX0 + 18, 413, "关闭时只写注册表，需要手动重启资源管理器", 11.2, FAINT)
+        self.sw_restart = Switch(cv, CX1 - 18 - 40, 390, self.restart_after,
                                  lambda v: setattr(self, "restart_after", v))
         self.widgets.append(self.sw_restart)
 
         # 日志
-        self.card(386, 358, "运行日志")
+        self.card(468, 288, "运行日志")
         txt = tk.Text(cv, bg=LOG_BG, fg=LOG_FG, bd=0, highlightthickness=0,
                       font=(MONO, -12), padx=12, pady=10, wrap="word",
                       insertbackground=LOG_FG, spacing1=1, spacing3=1)
@@ -732,8 +733,8 @@ class Panel:
         txt.tag_configure("warn", foreground="#9D5D00")
         txt.tag_configure("err", foreground="#C42B1C")
         txt.tag_configure("dim", foreground="#8A8A8A")
-        cv.create_window(CX0 + 18, 414, window=txt, anchor="nw",
-                         width=CX1 - CX0 - 36, height=304, tags="content")
+        cv.create_window(CX0 + 18, 480, window=txt, anchor="nw",
+                         width=CX1 - CX0 - 36, height=264, tags="content")
         self.proxy.append(txt)
         self.log_box = txt
         for level, msg in self.log_history:            # 切页回来日志不丢
@@ -762,26 +763,26 @@ class Panel:
         self.widgets.append(Btn(cv, CX1 - 18 - 108, 142, 108, 32, "打开仓库",
                                 self.open_repo, "secondary", 4, 12.5))
 
-        self.card(262, 194, "包含的模块")
+        self.card(288, 164, "包含的模块")
         rows = [("Dock", "屏幕底部悬浮启动栏，支持悬停放大、拖入应用", "dock/EasyDock.pyw"),
                 ("托盘图标", "批量展开 / 收纳 Windows 11 通知区域图标", "TrayGUI.pyw"),
                 ("紧急恢复", "桌面黑屏、任务栏消失时双击即可恢复 explorer", "恢复桌面.bat")]
         for i, (name, desc, path) in enumerate(rows):
-            y = 320 + i * 46
+            y = 312 + i * 52
             self.label(CX0 + 18, y, name, 12.8, TEXT, "bold")
             self.label(CX0 + 18, y + 19, desc, 11.2, MUTED)
             self.label(CX1 - 18, y + 9, path, 10.5, FAINT, anchor="e")
             if i < len(rows) - 1:
-                self.hairline(y + 36)
+                self.hairline(y + 42)
 
-        self.card(468, 204, "特性")
+        self.card(490, 166, "特性")
         feats = ["只写 HKCU，不改系统级设置，随时可还原",
                  "不联网、不上报、不安装驱动",
                  "菜单入口与桌面快捷方式可一键卸载",
                  "配置保存在本地 config.json，可手工编辑",
                  "所有操作失败都有兜底，不会让桌面卡在黑屏"]
         for i, s in enumerate(feats):
-            y = 520 + i * 30
+            y = 518 + i * 30
             cv.create_oval(CX0 + 19, y - 3, CX0 + 25, y + 3, fill=ACCENT, outline="",
                            tags="content")
             self.label(CX0 + 36, y, s, 11.8, TEXT)

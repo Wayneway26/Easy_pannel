@@ -15,9 +15,10 @@ Windows 小工具集：绿色免安装、纯本地运行、只改当前用户设
 ![EasyPanel](assets/panel.png)
 
 一个窗口管两件事。视觉照 Windows 11「设置」做：`#F3F3F3` 底、白色卡片承载每组设置、
-`#0067C0` 强调色、8px 圆角、卡片内「左标题 + 灰描述 / 右侧控件」的设置行、左侧导航选中项
-带强调色竖条——也就是 WinUI 3 的 Fluent Design，和 AutoDarkMode 那类原生应用摆在一起
-观感是同一套。全部用 tkinter 的 Canvas 自绘，没有引入 WinUI 或任何第三方库。
+`#0067C0` 强调色、6px 圆角、**组标题在卡片外面上方**、卡片内「左标题 + 灰描述 / 右侧控件」
+的设置行配 1px 分割线、左侧导航选中项带强调色竖条——也就是 WinUI 3 的 Fluent Design，
+和 AutoDarkMode 那类原生应用摆在一起观感是同一套。全部用 tkinter 的 Canvas 自绘，
+没有引入 WinUI 或任何第三方库。
 
 | 页面 | 能做什么 |
 | --- | --- |
