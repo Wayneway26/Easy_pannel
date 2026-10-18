@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-EasyPanel —— Dock 与托盘图标的统一控制面板（Windows 11 风格）
+EasyPanel —— Dock 与托盘图标的统一控制面板
 
-视觉规范照 Windows 11「设置」来：
-  · 底色 #F3F3F3、内容卡片 #FBFBFB 带 1px 描边、控件圆角 4px
-  · 强调色 #0067C0，正文微软雅黑，日志等宽 Consolas
-  · 左侧导航（选中项白底 + 左侧强调色竖条）、右上角最小化/关闭
-界面全部用 Canvas 自绘，不依赖任何第三方 UI 库，保持项目「绿色单文件」的特点。
+视觉基准：Windows 11 / WinUI 3 的「设置」式布局（AutoDarkMode 那种感觉）
+  · 窗口底 #F3F3F3，内容用白色卡片承载，圆角 8，1px 淡描边
+  · 卡片内是「设置行」：左侧标题 + 灰描述，右侧控件，行间 1px 分割线
+  · 强调色 #0067C0，正文微软雅黑
+  · 左侧导航：选中项白底 + 左侧强调色圆角竖条
+
+全部用 Canvas 自绘，零第三方依赖，保持「绿色单文件」的特点。
 
 两个子工具：
   · Dock        —— 独立进程（dock/EasyDock.pyw），本面板负责启停 + 改配置
@@ -35,37 +37,40 @@ DOCK_PID = os.path.join(DOCK_DIR, "dock.pid")
 TRAY_SCRIPT = os.path.join(HERE, "TrayGUI.pyw")
 ICON_CACHE = os.path.join(HERE, "cache", "panel-icons")
 
-VERSION = "1.0.0"
+VERSION = "1.2.0"
 
 # ---------------------------------------------------------------- 调色板
 MAGIC = "#010203"            # 色键：窗口圆角外的部分靠它抠成真透明
-BG = "#F3F3F3"
-CARD = "#FBFBFB"
-CARD_LINE = "#E3E3E3"
-ROW_HOVER = "#EFEFEF"
-TEXT = "#1B1B1B"
-MUTED = "#616161"
+BG = "#F3F3F3"               # 窗口底
+CARD = "#FFFFFF"             # 卡片
+CARD_LINE = "#E8E8E8"        # 卡片描边
+HAIRLINE = "#EFEFEF"         # 行分割线
+NAV_ACTIVE = "#FFFFFF"
+ROW_HOVER = "#F5F5F5"
+TEXT = "#1A1A1A"
+MUTED = "#5D5D5D"
 FAINT = "#8A8A8A"
 ACCENT = "#0067C0"
-ACCENT_HOVER = "#1A76C9"
+ACCENT_HOVER = "#1975C2"
 ACCENT_PRESS = "#005BA6"
 BTN = "#FDFDFD"
-BTN_LINE = "#D6D6D6"
-BTN_HOVER = "#F4F4F4"
-BTN_PRESS = "#EBEBEB"
+BTN_LINE = "#D9D9D9"
+BTN_HOVER = "#F5F5F5"
+BTN_PRESS = "#EDEDED"
 TRACK_OFF = "#9A9A9A"
 DANGER = "#C42B1C"
-SEG_BG = "#EDEDED"
-LOG_BG = "#1F1F1F"
-LOG_FG = "#D2D2D2"
+SEG_BG = "#F0F0F0"
+LOG_BG = "#FAFAFA"
+LOG_FG = "#2B2B2B"
 
 UI = "Microsoft YaHei UI"
 MONO = "Consolas"
 
-W, H = 780, 780
-NAV_W = 208
-TITLE_H = 48
-CX0, CX1 = 232, 756
+# ---------------------------------------------------------------- 布局
+W, H = 860, 792
+NAV_X, NAV_W = 10, 196       # 侧栏：10 .. 206
+CX0, CX1 = 232, 844          # 内容区：232 .. 844（宽 612）
+TITLE_H = 52
 
 
 def f(size, weight="normal", family=UI):
@@ -184,24 +189,28 @@ class Btn(Widget):
 
 
 class TitleBtn(Widget):
-    """标题栏上的最小化 / 关闭"""
+    """标题栏上的最小化 / 关闭 —— tag 必须是 chrome，切页时不能被清掉"""
 
     def __init__(self, cv, x, y, kind, cmd):
         self.cv, self.cmd = cv, cmd
         self.kind = kind
         self.danger = kind == "close"
-        self.box = (x, y, x + 46, y + 32)
+        self.box = (x, y - 4, x + 46, y + 40)
         if self.danger:
-            self.bg = cv.create_polygon(tr_round(x, y, x + 46, y + 32, 8),
-                                        fill=BG, outline="", tags="content")
+            self.bg = cv.create_polygon(tr_round(x, y - 4, x + 46, y + 40, 8),
+                                        fill=BG, outline="", tags="chrome")
         else:
-            self.bg = cv.create_rectangle(x, y, x + 46, y + 32, fill=BG, outline="", tags="content")
+            self.bg = cv.create_rectangle(x, y - 4, x + 46, y + 40, fill=BG,
+                                          outline="", tags="chrome")
         cx, cy = x + 23, y + 16
         if self.danger:
-            self.marks = [cv.create_line(cx - 5, cy - 5, cx + 5, cy + 5, fill=TEXT, width=1.1, tags="content"),
-                          cv.create_line(cx - 5, cy + 5, cx + 5, cy - 5, fill=TEXT, width=1.1, tags="content")]
+            self.marks = [cv.create_line(cx - 5, cy - 5, cx + 5, cy + 5, fill=TEXT,
+                                         width=1.1, tags="chrome"),
+                          cv.create_line(cx - 5, cy + 5, cx + 5, cy - 5, fill=TEXT,
+                                         width=1.1, tags="chrome")]
         else:
-            self.marks = [cv.create_line(cx - 5, cy, cx + 5, cy, fill=TEXT, width=1.1, tags="content")]
+            self.marks = [cv.create_line(cx - 5, cy, cx + 5, cy, fill=TEXT,
+                                         width=1.1, tags="chrome")]
 
     def hover(self, on):
         if self.danger:
@@ -222,7 +231,8 @@ class Switch(Widget):
         self.cv, self.cmd = cv, cmd
         self.value = bool(value)
         self.w, self.h = w, h
-        self.box = (x, y, x + w, y + h)
+        self.x, self.y = x, y
+        self.box = (x - 4, y - 8, x + w + 4, y + h + 8)
         self.track = cv.create_polygon(round_rect(x, y, x + w, y + h, h / 2.0),
                                        fill=ACCENT, outline="", tags="content")
         self.knob = cv.create_oval(0, 0, 0, 0, fill="#FFFFFF", outline="", tags="content")
@@ -231,8 +241,8 @@ class Switch(Widget):
     def _paint(self):
         self.cv.itemconfig(self.track, fill=ACCENT if self.value else TRACK_OFF)
         r = (self.h - 8) / 2.0
-        cy = self.box[1] + self.h / 2.0
-        cx = (self.box[2] - self.h / 2.0) if self.value else (self.box[0] + self.h / 2.0)
+        cy = self.y + self.h / 2.0
+        cx = (self.x + self.w - self.h / 2.0) if self.value else (self.x + self.h / 2.0)
         self.cv.coords(self.knob, cx - r, cy - r, cx + r, cy + r)
 
     def click(self, x, y):
@@ -251,13 +261,13 @@ class Seg(Widget):
         self.index = index
         self.box = (x, y, x + w, y + h)
         self.x, self.y, self.w, self.h = x, y, w, h
-        cv.create_polygon(round_rect(x, y, x + w, y + h, 4),
+        cv.create_polygon(round_rect(x, y, x + w, y + h, 5),
                           fill=SEG_BG, outline="", tags="content")
         self.cells, self.labels = [], []
         seg_w = (w - 4) / float(len(self.options))
         for i, text in enumerate(self.options):
             x1 = x + 2 + i * seg_w
-            cell = cv.create_polygon(round_rect(x1, y + 2, x1 + seg_w, y + h - 2, 3),
+            cell = cv.create_polygon(round_rect(x1, y + 2, x1 + seg_w, y + h - 2, 4),
                                      fill="", outline="", tags="content")
             lb = cv.create_text(x1 + seg_w / 2.0, y + h / 2.0, text=text,
                                 fill=MUTED, font=f(12), tags="content")
@@ -289,19 +299,20 @@ class Stepper(Widget):
         self.on_minus, self.on_plus = on_minus, on_plus
         self.box = (x, y, x + w, y + h)
         self.w, self.h = w, h
-        cv.create_polygon(round_rect(x, y, x + w, y + h, 4),
+        cv.create_polygon(round_rect(x, y, x + w, y + h, 5),
                           fill="#FFFFFF", outline=BTN_LINE, width=1, tags="content")
         cy = y + h / 2.0
         self.zone = []
         for i, glyph in enumerate(("-", "+")):
             zx = x + (4 if i == 0 else w - 32)
-            z = cv.create_polygon(round_rect(zx, y + 3, zx + 28, y + h - 3, 3),
+            z = cv.create_polygon(round_rect(zx, y + 3, zx + 28, y + h - 3, 4),
                                   fill="", outline="", tags="content")
             cv.create_line(zx + 9, cy, zx + 19, cy, fill=TEXT, width=1.1, tags="content")
             if glyph == "+":
                 cv.create_line(zx + 14, cy - 5, zx + 14, cy + 5, fill=TEXT, width=1.1, tags="content")
             self.zone.append(z)
-        self.label = cv.create_text(x + w / 2.0, cy, text=text, fill=TEXT, font=f(13), tags="content")
+        self.label = cv.create_text(x + w / 2.0, cy, text=text, fill=TEXT,
+                                    font=f(13), tags="content")
 
     def set_text(self, s):
         self.cv.itemconfig(self.label, text=s)
@@ -317,23 +328,23 @@ class Stepper(Widget):
 
 
 class NavItem(Widget):
-    """左侧导航项"""
+    """左侧导航项（tag=ui，与页面内容分离，永不被清理）"""
 
     def __init__(self, cv, x, y, w, h, key, label, icon, cmd):
         self.cv, self.key, self.cmd = cv, key, cmd
         self.box = (x, y, x + w, y + h)
-        self.bg = cv.create_polygon(round_rect(x, y, x + w, y + h, 4),
+        self.bg = cv.create_polygon(round_rect(x, y, x + w, y + h, 6),
                                     fill="", outline="", tags="ui")
-        self.bar = cv.create_polygon(round_rect(x + 4, y + h / 2.0 - 8, x + 7, y + h / 2.0 + 8, 1.5),
+        self.bar = cv.create_polygon(round_rect(x + 3, y + h / 2.0 - 8, x + 6, y + h / 2.0 + 8, 1.5),
                                      fill="", outline="", tags="ui")
-        self.icon = nav_icon(cv, x + 26, y + h / 2.0, icon, MUTED)
-        self.label = cv.create_text(x + 44, y + h / 2.0, text=label, anchor="w",
+        self.icon = nav_icon(cv, x + 28, y + h / 2.0, icon, MUTED)
+        self.label = cv.create_text(x + 48, y + h / 2.0, text=label, anchor="w",
                                     fill=TEXT, font=f(13), tags="ui")
         self.active = False
 
     def set_active(self, on):
         self.active = on
-        self.cv.itemconfig(self.bg, fill="#FFFFFF" if on else "", outline=CARD_LINE if on else "")
+        self.cv.itemconfig(self.bg, fill=NAV_ACTIVE if on else "")
         self.cv.itemconfig(self.bar, fill=ACCENT if on else "")
         color = ACCENT if on else MUTED
         for i in self.icon[0]:
@@ -351,29 +362,33 @@ class NavItem(Widget):
 
 
 class AppRow(Widget):
-    """Dock 应用列表里的一行"""
+    """Dock 应用列表里的一行 —— 内部按钮要在 click 里转发命中"""
 
     def __init__(self, cv, x, y, w, h, panel, index):
         self.cv, self.panel, self.index = cv, panel, index
         self.box = (x, y, x + w, y + h)
-        self.bg = cv.create_polygon(round_rect(x, y, x + w, y + h, 4),
+        self.bg = cv.create_polygon(round_rect(x, y, x + w, y + h, 5),
                                     fill="", outline="", tags="content")
         item = panel.dock_cfg["items"][index]
-        self.thumb = panel.row_icon(item, x + 6, y + (h - 22) / 2.0)
-        cv.create_text(x + 40, y + h / 2.0, text=item.get("name") or "未命名",
+        self.thumb = panel.row_icon(item, x + 8, y + (h - 22) / 2.0)
+        cv.create_text(x + 42, y + h / 2.0, text=item.get("name") or "未命名",
                        anchor="w", fill=TEXT, font=f(12.5), tags="content")
         self.btns = []
         for i, (glyph, cb, title) in enumerate((
                 ("up", lambda: panel.move_item(index, -1), "上移"),
                 ("down", lambda: panel.move_item(index, +1), "下移"),
                 ("x", lambda: panel.remove_item(index), "移除"))):
-            self.btns.append(SmallIcon(cv, x + w - 84 + i * 28, y + (h - 24) / 2.0, 24, glyph, cb))
+            self.btns.append(SmallIcon(cv, x + w - 84 + i * 28, y + (h - 24) / 2.0,
+                                       24, glyph, cb))
 
     def hover(self, on):
         self.cv.itemconfig(self.bg, fill=ROW_HOVER if on else "")
 
     def click(self, x, y):
-        pass
+        for b in self.btns:                 # 关键修复：把点击转发给行内小按钮
+            if b.hit(x, y):
+                b.click(x, y)
+                return
 
 
 class SmallIcon(Widget):
@@ -382,7 +397,7 @@ class SmallIcon(Widget):
     def __init__(self, cv, x, y, size, glyph, cmd):
         self.cv, self.cmd = cv, cmd
         self.box = (x, y, x + size, y + size)
-        self.bg = cv.create_polygon(round_rect(x, y, x + size, y + size, 3),
+        self.bg = cv.create_polygon(round_rect(x, y, x + size, y + size, 4),
                                     fill="", outline="", tags="content")
         cx, cy = x + size / 2.0, y + size / 2.0
         col = MUTED if glyph != "x" else FAINT
@@ -393,11 +408,13 @@ class SmallIcon(Widget):
             self.mark = cv.create_line(cx, cy - 4, cx, cy + 4, fill=col, width=1.2,
                                        arrow="last", arrowshape=(5, 6, 2.5), tags="content")
         else:
-            self.mark = [cv.create_line(cx - 3.5, cy - 3.5, cx + 3.5, cy + 3.5, fill=col, width=1.2, tags="content"),
-                         cv.create_line(cx - 3.5, cy + 3.5, cx + 3.5, cy - 3.5, fill=col, width=1.2, tags="content")]
+            self.mark = [cv.create_line(cx - 3.5, cy - 3.5, cx + 3.5, cy + 3.5, fill=col,
+                                        width=1.2, tags="content"),
+                         cv.create_line(cx - 3.5, cy + 3.5, cx + 3.5, cy - 3.5, fill=col,
+                                        width=1.2, tags="content")]
 
     def hover(self, on):
-        self.cv.itemconfig(self.bg, fill="#E6E6E6" if on else "")
+        self.cv.itemconfig(self.bg, fill="#E8E8E8" if on else "")
 
     def click(self, x, y):
         self.cmd()
@@ -436,12 +453,14 @@ class Panel:
         self.tray = load_module(TRAY_SCRIPT, "tray_core")
         self.dock_cfg = self._read_dock_cfg()
         self.page = "dock"
-        self.widgets = []
+        self.widgets = []                 # 页面控件（切页清空）
+        self.chrome_widgets = []          # 标题栏 + 导航（永不清空）
         self.proxy = []
 
         self.hot = None
         self.drag = None
         self.busy = False
+        self._quit_pending = False
         self.restart_after = True
         self.row_icons = {}
         self.log_box = None
@@ -484,7 +503,7 @@ class Panel:
         except tk.TclError:
             pass
         sw, sh = r.winfo_screenwidth(), r.winfo_screenheight()
-        x, y = (sw - W) // 2, max(20, (sh - H) // 2 - 20)
+        x, y = (sw - W) // 2, max(16, (sh - H) // 2 - 24)
         r.geometry("%dx%d+%d+%d" % (W, H, x, y))
         try:                                           # 任务栏图标复位（overrideredirect 会藏起来）
             r.wm_attributes("-toolwindow", False)
@@ -500,36 +519,42 @@ class Panel:
         self.cv.bind("<ButtonRelease-1>", self._on_release)
         self.cv.bind("<Button-3>", lambda e: None)
 
+        # 关不掉的三重保险：Alt+F4 / Esc / 系统关闭消息
+        r.bind("<Alt-F4>", lambda e: self.quit_app())
+        r.bind("<Escape>", lambda e: self.quit_app())
+        r.protocol("WM_DELETE_WINDOW", self.quit_app)
+
     # -- 外壳 ------------------------------------------------------
     def _draw_chrome(self):
         cv = self.cv
-        cv.create_polygon(round_rect(0, 0, W, H, 8), fill=BG, outline="#D5D5D5",
+        cv.create_polygon(round_rect(0, 0, W, H, 10), fill=BG, outline="#D8D8D8",
                           width=1, tags="chrome")
 
-        # 标题栏
+        # 应用图标：三块错落的「面板」
         cv.create_polygon(round_rect(20, 16, 40, 36, 5), fill=ACCENT, outline="", tags="chrome")
         cv.create_polygon(round_rect(25, 21, 31, 27, 1.5), fill="#FFFFFF", outline="", tags="chrome")
         cv.create_polygon(round_rect(25, 30, 31, 34, 1.2), fill="#FFFFFF", outline="", tags="chrome")
         cv.create_polygon(round_rect(33, 21, 35, 34, 1.0), fill="#FFFFFF", outline="", tags="chrome")
         cv.create_text(50, 26, text="EasyPanel", anchor="w", fill=TEXT, font=f(13, "bold"),
                        tags="chrome")
+        cv.create_text(W - 116, 26, text="v" + VERSION, anchor="e", fill=FAINT,
+                       font=f(10.5), tags="chrome")
 
-        self.widgets.append(TitleBtn(cv, W - 92, 8, "min", self.minimize))
-        self.widgets.append(TitleBtn(cv, W - 46, 8, "close", self.quit_app))
+        self.chrome_widgets.append(TitleBtn(cv, W - 92, 8, "min", self.minimize))
+        self.chrome_widgets.append(TitleBtn(cv, W - 46, 8, "close", self.quit_app))
 
         # 左侧导航
         self.nav = {}
-        y = TITLE_H + 16
+        y = 66
         for key, label, icon in (("dock", "Dock", "dock"),
                                  ("tray", "托盘图标", "tray"),
                                  ("about", "关于", "info")):
-            item = NavItem(cv, 12, y, NAV_W - 24, 38, key, label, icon, self.show_page)
+            item = NavItem(cv, NAV_X, y, NAV_W, 40, key, label, icon, self.show_page)
             self.nav[key] = item
-            self.widgets.append(item)
-            y += 40
+            self.chrome_widgets.append(item)
+            y += 42
 
-        cv.create_text(16, H - 22, text="v" + VERSION, anchor="w", fill=FAINT,
-                       font=f(11), tags="chrome")
+        cv.create_line(NAV_X + 12, 210, NAV_X + NAV_W - 12, 210, fill="#E4E4E4", tags="ui")
 
     # -- 页面切换 --------------------------------------------------
     def show_page(self, key):
@@ -541,7 +566,7 @@ class Panel:
                 pass
         self.proxy = []
         self.log_box = None
-        self.widgets = [w for w in self.widgets if not isinstance(w, (Btn, Switch, Seg, Stepper, AppRow, SmallIcon))]
+        self.widgets = []                              # 页面控件整体丢弃，chrome 不受影响
         self.cv.delete("content")
         self.hot = None
         for k, item in self.nav.items():
@@ -550,92 +575,110 @@ class Panel:
          "about": self._page_about}[key]()
 
     # -- 通用绘制小工具 --------------------------------------------
-    def card(self, y, h, title=None, pad=14):
+    def card(self, y, h, title=None, pad=18):
         cv = self.cv
-        cv.create_polygon(round_rect(CX0, y, CX1, y + h, 6), fill=CARD,
+        cv.create_polygon(round_rect(CX0, y, CX1, y + h, 8), fill=CARD,
                           outline=CARD_LINE, width=1, tags="content")
         if title:
-            cv.create_text(CX0 + pad, y + 18, text=title, anchor="w", fill=TEXT,
-                           font=f(12.5, "bold"), tags="content")
+            cv.create_text(CX0 + pad, y + 24, text=title, anchor="w", fill=TEXT,
+                           font=f(13, "bold"), tags="content")
         return y
 
-    def label(self, x, y, text, size=12.5, color=TEXT, weight="normal", anchor="w"):
+    def label(self, x, y, text, size=13, color=TEXT, weight="normal", anchor="w"):
         return self.cv.create_text(x, y, text=text, anchor=anchor, fill=color,
                                    font=f(size, weight), tags="content")
 
     def page_head(self, title, subtitle):
-        self.label(CX0, 74, title, 22, TEXT, "bold")
-        self.label(CX0, 102, subtitle, 12, MUTED)
+        self.label(CX0 - 4, 80, title, 23, TEXT, "bold")
+        self.label(CX0 - 4, 106, subtitle, 11.8, MUTED)
+
+    def row_text(self, y, title, desc=None):
+        """设置行左侧的两行文字"""
+        self.label(CX0 + 18, y + 21, title, 13)
+        if desc:
+            self.label(CX0 + 18, y + 40, desc, 11.2, FAINT)
+
+    def hairline(self, y):
+        self.cv.create_line(CX0 + 18, y, CX1 - 18, y, fill=HAIRLINE, tags="content")
 
     # ---------------------------------------------------------- Dock
     def _page_dock(self):
         cfg = self.dock_cfg
         self.page_head("Dock", "屏幕底部的应用启动栏 · 悬停放大 · 单击启动")
+        cv = self.cv
 
         # --- 状态卡 ---
-        self.card(120, 80)
-        cv = self.cv
-        cv.create_polygon(round_rect(CX0 + 14, 138, CX0 + 58, 182, 9),
+        self.card(126, 80)
+        cv.create_polygon(round_rect(CX0 + 18, 144, CX0 + 62, 188, 11),
                           fill="#2B2B31", outline="", tags="content")
         for i in range(3):
-            cv.create_polygon(round_rect(CX0 + 22 + i * 11, 152, CX0 + 30 + i * 11, 168, 2),
+            cv.create_polygon(round_rect(CX0 + 26 + i * 11, 158, CX0 + 34 + i * 11, 174, 2),
                               fill="#FFFFFF", outline="", tags="content")
-        cv.create_polygon(round_rect(CX0 + 22, 172, CX0 + 50, 175, 1.5),
+        cv.create_polygon(round_rect(CX0 + 26, 178, CX0 + 54, 181, 1.5),
                           fill="#7A7A85", outline="", tags="content")
         alive = self.dock_pid() is not None
-        self.label(CX0 + 70, 152, "Easy Dock", 13.5, TEXT, "bold")
+        n = len(cfg.get("items") or [])
+        self.label(CX0 + 78, 156, "Easy Dock", 14, TEXT, "bold")
         self.status_label = self.label(
-            CX0 + 70, 172,
-            ("正在运行 · %d 个应用" % len(cfg.get("items") or [])) if alive
-            else "未运行 · 点「启动」显示到桌面底部", 11.5, MUTED)
+            CX0 + 78, 178,
+            ("正在运行 · %d 个应用" % n) if alive else "未运行 · 点「启动」显示到桌面底部",
+            11.5, MUTED)
 
-        self.btn_dock = Btn(cv, CX1 - 16 - 96, 144, 96, 32,
+        self.btn_dock = Btn(cv, CX1 - 18 - 100, 148, 100, 32,
                             "关闭" if alive else "启动",
                             self.toggle_dock, "secondary" if alive else "primary")
         self.widgets.append(self.btn_dock)
 
         # --- 外观卡 ---
-        self.card(212, 180, "外观")
-        rows = 254
-        self.label(CX0 + 14, rows + 13, "图标大小", 12.5)
-        self.label(CX0 + 14, rows + 31, "每个图标的边长（像素）", 10.5, FAINT)
-        self.step_size = Stepper(cv, 624, rows, 116, 30, "%d px" % cfg["icon_size"],
-                                 lambda: self.bump("icon_size", -4), lambda: self.bump("icon_size", 4))
+        self.card(218, 206, "外观")
+        rows = 252
+        self.row_text(rows, "图标大小", "每个图标的边长，40–72 px")
+        self.step_size = Stepper(cv, CX1 - 138, rows + 12, 120, 32,
+                                 "%d px" % cfg["icon_size"],
+                                 lambda: self.bump("icon_size", -4),
+                                 lambda: self.bump("icon_size", 4))
         self.widgets.append(self.step_size)
+        self.hairline(rows + 56)
 
-        rows += 46
-        self.label(CX0 + 14, rows + 13, "悬停放大", 12.5)
-        self.label(CX0 + 14, rows + 31, "鼠标移上去时放大的倍数", 10.5, FAINT)
-        self.step_zoom = Stepper(cv, 624, rows, 116, 30, "%.2f×" % float(cfg.get("zoom", 1.75)),
-                                 lambda: self.bump("zoom", -0.25), lambda: self.bump("zoom", 0.25))
+        rows += 56
+        self.row_text(rows, "悬停放大", "鼠标移上去时放大的倍数")
+        self.step_zoom = Stepper(cv, CX1 - 138, rows + 12, 120, 32,
+                                 "%.2f×" % float(cfg.get("zoom", 1.75)),
+                                 lambda: self.bump("zoom", -0.25),
+                                 lambda: self.bump("zoom", 0.25))
         self.widgets.append(self.step_zoom)
+        self.hairline(rows + 56)
 
-        rows += 46
-        self.label(CX0 + 14, rows + 13, "Dock 主题", 12.5)
+        rows += 56
+        self.row_text(rows, "Dock 主题", "深色更接近 iOS 原生气质")
         theme = "dark" if str(cfg.get("bg", "")).upper() in ("#1F1F24", "#1F1F1F") else "light"
-        self.seg_theme = Seg(cv, 608, rows + 2, 132, 28, ["深色", "浅色"],
+        self.seg_theme = Seg(cv, CX1 - 146, rows + 12, 128, 32, ["深色", "浅色"],
                              0 if theme == "dark" else 1, self.set_theme)
         self.widgets.append(self.seg_theme)
 
         # --- 应用列表 ---
-        self.card(400, 356)
+        self.card(436, 246, "Dock 中的应用")
         items = cfg.get("items") or []
-        self.label(CX0 + 14, 418, "Dock 中的应用", 12.5, TEXT, "bold")
-        self.label(CX1 - 14, 418,
-                   ("%d 个（仅显示前 8 个）" % len(items)) if len(items) > 8
+        self.label(CX1 - 18, 460,
+                   ("%d 个 · 显示前 6 个" % len(items)) if len(items) > 6
                    else "%d 个" % len(items), 11, FAINT, anchor="e")
 
-        max_rows = 8
-        top = 434
-        row_h = 33
+        max_rows = 6
+        top = 476
+        row_h = 34
+        if not items:
+            self.label(CX0 + 18, 500, "还没有添加任何应用", 12.5, MUTED)
+            self.label(CX0 + 18, 522, "点下面的「添加应用…」把常用的程序放进来", 11.2, FAINT)
         for i, _item in enumerate(items[:max_rows]):
             self.widgets.append(AppRow(cv, CX0 + 10, top + i * row_h, CX1 - CX0 - 20,
                                        row_h, self, i))
+            if i < min(len(items), max_rows) - 1:
+                self.hairline(top + (i + 1) * row_h - 4)
 
-        self.widgets.append(Btn(cv, CX0 + 14, 706, 108, 30, "添加应用…",
-                                self.add_item, "secondary", 4, 12))
-        self.widgets.append(Btn(cv, CX0 + 130, 706, 92, 30, "重新启动",
-                                self.restart_dock, "secondary", 4, 12))
+        self.widgets.append(Btn(cv, CX0, 700, 116, 32, "添加应用…",
+                                self.add_item, "secondary", 4, 12.5))
+        self.widgets.append(Btn(cv, CX0 + 128, 700, 108, 32, "重新启动",
+                                self.restart_dock, "secondary", 4, 12.5))
 
     # ---------------------------------------------------------- 托盘
     def _page_tray(self):
@@ -653,43 +696,44 @@ class Panel:
         stats = [("显示在任务栏", shown, ACCENT),
                  ("收在溢出区", hidden, "#C86A00" if hidden else FAINT),
                  ("暂无设置值", missing, "#C86A00" if missing else FAINT)]
-        cw, gap = 166, 13
+        cw, gap = 196, 12
         for i, (label, num, color) in enumerate(stats):
             x = CX0 + i * (cw + gap)
-            cv.create_polygon(round_rect(x, 120, x + cw, 200, 6), fill=CARD,
+            cv.create_polygon(round_rect(x, 126, x + cw, 202, 8), fill=CARD,
                               outline=CARD_LINE, width=1, tags="content")
-            cv.create_text(x + 18, 152, text=str(num), anchor="w", fill=color,
+            cv.create_text(x + 18, 158, text=str(num), anchor="w", fill=color,
                            font=f(26, "bold"), tags="content")
-            cv.create_text(x + 18, 178, text=label, anchor="w", fill=MUTED,
+            cv.create_text(x + 18, 184, text=label, anchor="w", fill=MUTED,
                            font=f(11.5), tags="content")
 
         # 操作卡
-        self.card(212, 96)
-        self.label(CX0 + 14, 234, "批量设置所有托盘图标的显示状态", 12.5)
-        self.label(CX0 + 14, 252, "会先结束 Explorer，写入注册表后再启动，避免退出时覆盖", 10.5, FAINT)
-        self.widgets.append(Btn(cv, CX0 + 14, 268, 128, 30, "一键全部展开",
-                                lambda: self.tray_apply(1), "primary", 4, 12))
-        self.widgets.append(Btn(cv, CX0 + 152, 268, 128, 30, "一键恢复收纳",
-                                lambda: self.tray_apply(0), "secondary", 4, 12))
+        self.card(214, 92)
+        self.label(CX0 + 18, 238, "批量设置所有托盘图标的显示状态", 13)
+        self.label(CX0 + 18, 258, "会先结束 Explorer，写入注册表后再启动，避免退出时覆盖", 11.2, FAINT)
+        self.widgets.append(Btn(cv, CX0 + 18, 270, 132, 30, "一键全部展开",
+                                lambda: self.tray_apply(1), "primary", 4, 12.5))
+        self.widgets.append(Btn(cv, CX0 + 160, 270, 132, 30, "一键恢复收纳",
+                                lambda: self.tray_apply(0), "secondary", 4, 12.5))
 
         # 开关
-        self.card(320, 56)
-        self.label(CX0 + 14, 348, "执行后重启 Explorer 使设置生效", 12.5)
-        self.sw_restart = Switch(cv, CX1 - 14 - 40, 338, self.restart_after,
+        self.card(318, 56)
+        self.label(CX0 + 18, 338, "执行后重启 Explorer 使设置生效", 13)
+        self.label(CX0 + 18, 356, "关闭时只写注册表，需要手动重启资源管理器", 11.2, FAINT)
+        self.sw_restart = Switch(cv, CX1 - 18 - 40, 340, self.restart_after,
                                  lambda v: setattr(self, "restart_after", v))
         self.widgets.append(self.sw_restart)
 
         # 日志
-        self.card(388, 368, "运行日志")
+        self.card(386, 358, "运行日志")
         txt = tk.Text(cv, bg=LOG_BG, fg=LOG_FG, bd=0, highlightthickness=0,
-                      font=(MONO, -12), padx=10, pady=8, wrap="word",
-                      insertbackground=LOG_FG, spacing1=1)
-        txt.tag_configure("ok", foreground="#7FD1A5")
-        txt.tag_configure("warn", foreground="#F0C46B")
-        txt.tag_configure("err", foreground="#F08C8C")
+                      font=(MONO, -12), padx=12, pady=10, wrap="word",
+                      insertbackground=LOG_FG, spacing1=1, spacing3=1)
+        txt.tag_configure("ok", foreground="#0F7B0F")
+        txt.tag_configure("warn", foreground="#9D5D00")
+        txt.tag_configure("err", foreground="#C42B1C")
         txt.tag_configure("dim", foreground="#8A8A8A")
-        cv.create_window(CX0 + 14, 414, window=txt, anchor="nw",
-                         width=CX1 - CX0 - 28, height=326, tags="content")
+        cv.create_window(CX0 + 18, 414, window=txt, anchor="nw",
+                         width=CX1 - CX0 - 36, height=304, tags="content")
         self.proxy.append(txt)
         self.log_box = txt
         for level, msg in self.log_history:            # 切页回来日志不丢
@@ -697,70 +741,57 @@ class Panel:
         if not self.log_history:
             self.log("面板已就绪 · " + time.strftime("%Y-%m-%d %H:%M"))
 
-    def _insert_log(self, level, msg):
-        box = self.log_box
-        if box is None:
-            return
-        box.configure(state="normal")
-        box.insert("end", "[%s] " % time.strftime("%H:%M:%S"), ("dim",))
-        box.insert("end", msg + "\n", (level,))
-        box.see("end")
-        box.configure(state="disabled")
-
-    def log(self, msg, level="info"):
-        self.log_history.append((level, msg))
-        if len(self.log_history) > 200:
-            del self.log_history[:100]
-        self._insert_log(level, msg)
-
     # ---------------------------------------------------------- 关于
     def _page_about(self):
         self.page_head("关于", "Windows 小工具集 · 绿色免安装 · 纯本地运行")
         cv = self.cv
 
-        self.card(120, 132)
-        cv.create_polygon(round_rect(CX0 + 16, 138, CX0 + 68, 190, 10),
+        self.card(126, 124)
+        cv.create_polygon(round_rect(CX0 + 18, 144, CX0 + 74, 200, 12),
                           fill=ACCENT, outline="", tags="content")
-        cv.create_polygon(round_rect(CX0 + 28, 152, CX0 + 40, 164, 2), fill="#FFFFFF", outline="", tags="content")
-        cv.create_polygon(round_rect(CX0 + 44, 152, CX0 + 56, 164, 2), fill="#FFFFFF", outline="", tags="content")
-        cv.create_polygon(round_rect(CX0 + 28, 168, CX0 + 56, 174, 2), fill="#FFFFFF", outline="", tags="content")
-        self.label(CX0 + 84, 156, "EasyPanel", 16, TEXT, "bold")
-        self.label(CX0 + 84, 178, "版本 " + VERSION + " · MIT License", 11.5, MUTED)
-        self.label(CX0 + 84, 198, "Python 3 + tkinter，无第三方依赖", 11.5, FAINT)
-        self.label(CX0 + 84, 216, "github.com/Wayneway26/Easy_pannel", 11.5, ACCENT)
-        self.widgets.append(Btn(cv, CX1 - 16 - 96, 138, 96, 30, "打开仓库",
-                                self.open_repo, "secondary", 4, 12))
+        cv.create_polygon(round_rect(CX0 + 32, 158, CX0 + 46, 172, 3), fill="#FFFFFF",
+                          outline="", tags="content")
+        cv.create_polygon(round_rect(CX0 + 51, 158, CX0 + 63, 172, 3), fill="#FFFFFF",
+                          outline="", tags="content")
+        cv.create_polygon(round_rect(CX0 + 32, 177, CX0 + 63, 184, 2), fill="#FFFFFF",
+                          outline="", tags="content")
+        self.label(CX0 + 90, 156, "EasyPanel", 18, TEXT, "bold")
+        self.label(CX0 + 90, 180, "版本 " + VERSION + " · MIT License", 11.5, MUTED)
+        self.label(CX0 + 90, 200, "Python 3 + tkinter，无第三方依赖", 11.2, FAINT)
+        self.label(CX0 + 90, 220, "github.com/Wayneway26/Easy_pannel", 11.2, ACCENT)
+        self.widgets.append(Btn(cv, CX1 - 18 - 108, 142, 108, 32, "打开仓库",
+                                self.open_repo, "secondary", 4, 12.5))
 
-        self.card(264, 208, "包含的模块")
-        rows = [("Dock", "屏幕底部悬浮启动栏，支持悬停放大、拖入应用",
-                 "dock/EasyDock.pyw"),
-                ("托盘图标", "批量展开 / 收纳 Windows 11 通知区域图标",
-                 "TrayGUI.pyw"),
-                ("紧急恢复", "桌面黑屏、任务栏消失时双击即可恢复 explorer",
-                 "恢复桌面.bat")]
+        self.card(262, 194, "包含的模块")
+        rows = [("Dock", "屏幕底部悬浮启动栏，支持悬停放大、拖入应用", "dock/EasyDock.pyw"),
+                ("托盘图标", "批量展开 / 收纳 Windows 11 通知区域图标", "TrayGUI.pyw"),
+                ("紧急恢复", "桌面黑屏、任务栏消失时双击即可恢复 explorer", "恢复桌面.bat")]
         for i, (name, desc, path) in enumerate(rows):
-            y = 318 + i * 56
-            self.label(CX0 + 14, y, name, 12.5, TEXT, "bold")
-            self.label(CX0 + 14, y + 18, desc, 11, MUTED)
-            self.label(CX1 - 14, y + 9, path, 10.5, FAINT, anchor="e")
+            y = 320 + i * 46
+            self.label(CX0 + 18, y, name, 12.8, TEXT, "bold")
+            self.label(CX0 + 18, y + 19, desc, 11.2, MUTED)
+            self.label(CX1 - 18, y + 9, path, 10.5, FAINT, anchor="e")
             if i < len(rows) - 1:
-                cv.create_line(CX0 + 14, y + 40, CX1 - 14, y + 40, fill="#EDEDED", tags="content")
+                self.hairline(y + 36)
 
-        self.card(484, 200)
-        self.label(CX0 + 14, 506, "特性", 12.5, TEXT, "bold")
+        self.card(468, 204, "特性")
         feats = ["只写 HKCU，不改系统级设置，随时可还原",
                  "不联网、不上报、不安装驱动",
                  "菜单入口与桌面快捷方式可一键卸载",
                  "配置保存在本地 config.json，可手工编辑",
                  "所有操作失败都有兜底，不会让桌面卡在黑屏"]
         for i, s in enumerate(feats):
-            y = 534 + i * 28
-            cv.create_oval(CX0 + 16, y - 3, CX0 + 22, y + 3, fill=ACCENT, outline="", tags="content")
-            self.label(CX0 + 32, y, s, 11.5, TEXT)
-        self.label(CX0 + 14, 712, "© 2026 Wayneway26", 10.5, FAINT)
+            y = 520 + i * 30
+            cv.create_oval(CX0 + 19, y - 3, CX0 + 25, y + 3, fill=ACCENT, outline="",
+                           tags="content")
+            self.label(CX0 + 36, y, s, 11.8, TEXT)
+        self.label(CX0 + 18, 704, "© 2026 Wayneway26", 10.5, FAINT)
 
     # ---------------------------------------------------------- 交互
     def _hit(self, x, y):
+        for w in reversed(self.chrome_widgets):        # 标题栏 / 导航优先，永远不会丢
+            if w.hit(x, y):
+                return w
         for w in reversed(self.widgets):
             if w.hit(x, y):
                 return w
@@ -806,7 +837,19 @@ class Panel:
             self.root.overrideredirect(True)
 
     def quit_app(self):
-        self.root.destroy()
+        """关闭。托盘操作进行中时先等它跑完，避免 Explorer 停在半路。"""
+        if self.busy:
+            self._quit_pending = True
+            self.log("正在执行托盘操作，完成后自动退出…", "warn")
+            return
+        self._force_quit()
+
+    def _force_quit(self):
+        try:
+            self.root.destroy()
+        except Exception:                              # noqa: BLE001
+            pass
+        os._exit(0)                                    # 保证进程一定退干净
 
     def open_repo(self):
         try:
@@ -853,11 +896,36 @@ class Panel:
                 continue
         return False
 
+    def _kill_dock_fallback(self):
+        """pid 文件丢失 / 不匹配时的兜底：按命令行找 EasyDock.pyw 的进程"""
+        try:
+            out = subprocess.run(
+                ["wmic", "process", "where", "name='pythonw.exe' or name='python.exe'",
+                 "get", "ProcessId,CommandLine", "/format:list"],
+                capture_output=True, text=True, timeout=8,
+                creationflags=0x08000000).stdout
+        except Exception:                              # noqa: BLE001
+            return
+        cur = os.path.basename(DOCK_SCRIPT).lower()
+        hit = False
+        for line in out.splitlines():
+            line = line.strip()
+            if line.lower().startswith("commandline="):
+                hit = cur in line.lower()
+            elif line.lower().startswith("processid=") and hit:
+                pid = line.split("=", 1)[1].strip()
+                if pid.isdigit():
+                    subprocess.run(["taskkill", "/f", "/pid", pid],
+                                   capture_output=True, timeout=8)
+                hit = False
+
     def stop_dock(self):
         pid = self.dock_pid()
         if pid:
             subprocess.run(["taskkill", "/f", "/pid", str(pid)],
                            capture_output=True, timeout=10)
+        else:
+            self._kill_dock_fallback()
         try:
             os.remove(DOCK_PID)
         except OSError:
@@ -877,7 +945,8 @@ class Panel:
             self.toggle_dock()
             return
         self.stop_dock()
-        self.root.after(350, lambda: (self.start_dock(), self.root.after(700, self.refresh_dock_state)))
+        self.root.after(350, lambda: (self.start_dock(),
+                                      self.root.after(700, self.refresh_dock_state)))
 
     def _poll_dock_state(self):
         try:
@@ -935,8 +1004,8 @@ class Panel:
         img = self._icon_photo(src)
         if img is not None:
             return cv.create_image(x + 11, y + 11, image=img, tags="content")
-        return cv.create_polygon(round_rect(x, y, x + 22, y + 22, 5),
-                                 fill="#DCDCDC", outline="", tags="content")
+        return cv.create_polygon(round_rect(x, y, x + 22, y + 22, 6),
+                                 fill="#E4E4E4", outline="", tags="content")
 
     def _icon_photo(self, src):
         if not src or self.dock is None:
@@ -949,7 +1018,7 @@ class Panel:
             key = hashlib.md5(src.encode("utf-8")).hexdigest()[:16]
             png = os.path.join(ICON_CACHE, key + ".png")
             if not os.path.exists(png):
-                ok = self.dock.extract_icon_png(src, png, 44, (251, 251, 251))
+                ok = self.dock.extract_icon_png(src, png, 44, (255, 255, 255))
                 if not ok:
                     png = None
             if png and os.path.exists(png):
@@ -1027,8 +1096,27 @@ class Panel:
 
         threading.Thread(target=job, daemon=True).start()
 
+    def _insert_log(self, level, msg):
+        box = self.log_box
+        if box is None:
+            return
+        box.configure(state="normal")
+        box.insert("end", "[%s] " % time.strftime("%H:%M:%S"), ("dim",))
+        box.insert("end", msg + "\n", (level,))
+        box.see("end")
+        box.configure(state="disabled")
+
+    def log(self, msg, level="info"):
+        self.log_history.append((level, msg))
+        if len(self.log_history) > 200:
+            del self.log_history[:100]
+        self._insert_log(level, msg)
+
     def _after_tray(self):
         self.busy = False
+        if self._quit_pending:                         # 用户点了关闭，等操作结束再退
+            self._force_quit()
+            return
         if self.page == "tray":
             self.show_page("tray")
 
@@ -1053,7 +1141,7 @@ def _grab(root, panel, path):
     try:
         if panel.dock:
             panel.dock.grab_png(x, y, W, H, out)
-        print("saved:", out)
+        print("saved:", out, os.path.getsize(out))
     except Exception as e:                             # noqa: BLE001
         print("grab failed:", e)
     root.destroy()
