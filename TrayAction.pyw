@@ -8,12 +8,33 @@
 """
 import importlib.util
 import os
+import subprocess
 import sys
 import time
 import tkinter as tk
 from tkinter import messagebox
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+WATCHDOG = os.path.join(HERE, "ExplorerWatchdog.pyw")
+
+
+def spawn_watchdog(grace=10):
+    """在结束 Explorer 之前先放出看门狗：若本脚本中途异常退出导致桌面黑屏，由它兜底恢复。"""
+    try:
+        exe = sys.executable
+        if exe.lower().endswith("python.exe"):
+            cand = exe[:-len("python.exe")] + "pythonw.exe"
+            if os.path.exists(cand):
+                exe = cand
+        subprocess.Popen([exe, WATCHDOG, str(grace)],
+                         close_fds=True,
+                         creationflags=0x00000008 | 0x00000200,   # DETACHED | NEW_GROUP
+                         stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+        return True
+    except Exception:
+        return False
 
 
 def load_core():
@@ -43,12 +64,20 @@ def main():
         return
 
     try:
+        spawn_watchdog(10)          # 关键：先挂兜底，再动 Explorer
         if not core.kill_explorer():
             messagebox.showwarning("托盘图标助手", "Explorer 未能完全结束，修改可能不生效。")
         n, errs = core.set_all_promoted(want)
         time.sleep(0.4)
-        core.start_explorer()
-        time.sleep(3)
+        started = core.start_explorer()       # 内部已做"脱离父进程 + 启动校验 + 重试"
+        if not started:
+            messagebox.showerror(
+                "托盘图标助手",
+                "Explorer 未能启动，桌面可能黑屏。\n正在再试一次…\n\n"
+                "若仍无效：按 Ctrl+Shift+Esc → 文件 → 运行新任务 → 输入 explorer.exe")
+            core.start_explorer()
+            return
+        time.sleep(2.5)
 
         shown, hidden, missing = core.get_counts()
         if want == 1:
@@ -67,6 +96,12 @@ def main():
     except Exception as e:
         messagebox.showerror("托盘图标助手", "执行失败：%s" % e)
     finally:
+        # 无论如何都要保证 Explorer 回到运行状态，否则桌面会黑屏
+        try:
+            if not core.explorer_running():
+                core.start_explorer()
+        except Exception:
+            pass
         try:
             root.destroy()
         except Exception:

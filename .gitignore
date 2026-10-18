@@ -15,3 +15,6 @@ TrayAllShow.exe
 *.user
 Thumbs.db
 desktop.ini
+
+# 运行日志
+watchdog.log

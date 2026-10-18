@@ -7,7 +7,9 @@
 （Explorer 退出时会把内存中的托盘状态回写注册表，顺序颠倒会导致修改被覆盖）
 """
 import os
+import ctypes
 import subprocess
+import sys
 import threading
 import time
 import tkinter as tk
@@ -79,13 +81,17 @@ def set_all_promoted(value):
 
 
 def explorer_running():
+    """判断 Explorer 外壳是否存活。tasklist 失败时回退到窗口探测，避免误判为 True。"""
     try:
         # 中文系统 tasklist 输出为 GBK，直接按字节判断避免解码错误
         out = subprocess.run(["tasklist", "/fi", "imagename eq explorer.exe"],
                              capture_output=True, timeout=10).stdout
         return b"explorer.exe" in out.lower()
     except Exception:
-        return True
+        try:
+            return bool(ctypes.windll.user32.FindWindowW("Shell_TrayWnd", None))
+        except Exception:
+            return False
 
 
 def kill_explorer():
@@ -98,15 +104,75 @@ def kill_explorer():
     return not explorer_running()
 
 
-def start_explorer():
-    try:
-        subprocess.Popen([EXPLORER])
+# ---- 关键：启动 Explorer 必须"完全脱离"当前进程，否则父进程退出会把它一起带走 ----
+# 这三条是桌面变黑（explorer 未拉起）的根因修复：
+#   DETACHED_PROCESS        不继承控制台，进程独立存活
+#   CREATE_NEW_PROCESS_GROUP 独立进程组，不随父进程信号终止
+#   CREATE_BREAKAWAY_FROM_JOB 从父进程的 Job 对象中脱离（Job 关闭时不会被杀）
+DETACHED_PROCESS = 0x00000008
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+_BASE_FLAGS = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+
+
+def _spawn_detached(exe, args=None, flags=_BASE_FLAGS):
+    """以尽可能独立的方式启动进程；失败时逐级降级重试。"""
+    cmd = [exe] + (args or [])
+    attempts = [flags | CREATE_BREAKAWAY_FROM_JOB, flags, 0]
+    last = None
+    for fl in attempts:
+        try:
+            subprocess.Popen(cmd, close_fds=True, creationflags=fl,
+                             stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            return True
+        except OSError as e:
+            last = e
+    if last:
+        raise last
+    return False
+
+
+def start_explorer(wait=6.0):
+    """启动 Explorer 并确认真的起来了（黑屏事故的修复点）。"""
+    if explorer_running():
         return True
-    except Exception:
-        return False
+    for _ in range(3):
+        try:
+            _spawn_detached(EXPLORER)
+        except Exception:
+            try:                      # 最后一招：交给 cmd 的 start 兜底
+                _spawn_detached(os.path.join(SYSROOT, "System32", "cmd.exe"),
+                                ["/c", "start", "", EXPLORER])
+            except Exception:
+                pass
+        deadline = time.time() + wait / 3.0
+        while time.time() < deadline:
+            time.sleep(0.25)
+            if explorer_running():
+                return True
+    return explorer_running()
 
 
 TRAY_CACHE = r"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\TrayNotify"
+
+
+def spawn_watchdog(grace=10):
+    """动 Explorer 之前先放出看门狗；若本程序中途崩溃导致桌面黑屏，由它兜底恢复。"""
+    wd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ExplorerWatchdog.pyw")
+    if not os.path.exists(wd):
+        return False
+    try:
+        exe = sys.executable
+        if exe.lower().endswith("python.exe"):
+            cand = exe[:-len("python.exe")] + "pythonw.exe"
+            if os.path.exists(cand):
+                exe = cand
+        _spawn_detached(exe, [wd, str(grace)])
+        return True
+    except Exception:
+        return False
 
 
 def reset_tray_cache():
@@ -221,6 +287,7 @@ class App(object):
         try:
             # 1) 先结束 Explorer，避免它退出时把内存状态回写覆盖注册表
             if self.var_restart.get():
+                spawn_watchdog(10)      # 兜底：本程序异常退出也能把桌面救回来
                 self._log("正在结束 Explorer ...")
                 ok = kill_explorer()
                 if not ok:
@@ -260,6 +327,13 @@ class App(object):
         except Exception as e:
             self._log("出错：%s" % e)
         finally:
+            # 兜底：任何异常都不能把 Explorer 留在"已结束"状态，否则桌面会黑屏
+            try:
+                if not explorer_running():
+                    self._log("检测到 Explorer 未运行，正在恢复 ...")
+                    start_explorer()
+            except Exception:
+                pass
             self.root.after(0, lambda: (self.refresh(), self.set_busy(False)))
 
     def _log(self, msg):
@@ -268,6 +342,7 @@ class App(object):
     def restart_only(self):
         if not messagebox.askyesno("确认", "将重启 Explorer（任务栏闪一下），继续吗？"):
             return
+        spawn_watchdog(10)
         kill_explorer()
         time.sleep(0.4)
         start_explorer()
@@ -281,6 +356,7 @@ class App(object):
             return
         removed = reset_tray_cache()
         self.write_log("已清除缓存项：%s" % (", ".join(removed) if removed else "无（本就不存在）"))
+        spawn_watchdog(10)
         kill_explorer()
         time.sleep(0.4)
         start_explorer()
