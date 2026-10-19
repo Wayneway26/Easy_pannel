@@ -23,7 +23,9 @@ import hashlib
 import json
 import os
 import struct
+import subprocess
 import sys
+import threading
 import zlib
 from ctypes import byref, sizeof, c_void_p, c_int
 
@@ -34,6 +36,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "config.json")
 ICON_DIR = os.path.join(HERE, "icons")
 LOG_PATH = os.path.join(HERE, "dock.log")
+
+# 玻璃底：backdrop.py 在上一级目录（单独拷走 dock 时可能没有，所以容错）
+sys.path.insert(0, os.path.dirname(HERE))
+try:
+    import backdrop
+except Exception:                                    # noqa: BLE001
+    backdrop = None
 
 MAGIC = "#010203"          # 色键：这个颜色会被系统整块抠掉
 # 这些倍数的 scale/2 都能写成小分母分数，zoom+subsample 不丢精度
@@ -78,8 +87,9 @@ DEFAULT_CONFIG = {
     "icon_size": 48,
     "gap": 10,
     "padding": 10,
-    "radius": 18,
+    "radius": 22,
     "zoom": 1.75,              # 悬停时放大到几倍（1.5 / 1.75 / 2.0）
+    "glass": True,             # 玻璃底：抓桌面模糊后合成，做不到真透明时的最佳近似
     "bg": "#1F1F24",
     "border": "#3A3A42",
     "topmost": True,
@@ -90,6 +100,12 @@ DEFAULT_CONFIG = {
 THEMES = {
     "dark": {"bg": "#1F1F24", "border": "#3A3A42"},
     "light": {"bg": "#F7F7F9", "border": "#D8D8DE"},
+}
+
+# 玻璃蒙层：深色偏冷、浅色偏暖，跟 Seelen 的两种默认主题靠拢
+GLASS = {
+    "dark": {"tint": (18, 18, 22), "opacity": 0.68},
+    "light": {"tint": (252, 252, 255), "opacity": 0.78},
 }
 
 
@@ -214,8 +230,9 @@ def _icon_via_shell(path):
     return info.hIcon if r and info.hIcon else None
 
 
-def extract_icon_png(src, out, size, bg_rgb):
-    """把一个 exe/lnk 的图标渲染成 PNG，返回是否成功"""
+def extract_icon_png(src, out, size, bg_rgb, keep_alpha=False):
+    """把一个 exe/lnk 的图标渲染成 PNG，返回是否成功。
+    keep_alpha=True 时保留原始 alpha（玻璃底上融合更好）。"""
     target = src
     if src.lower().endswith(".lnk"):
         target = resolve_lnk(src) or src
@@ -261,7 +278,7 @@ def extract_icon_png(src, out, size, bg_rgb):
     u32.DestroyIcon(hicon)
     if not ok:
         return False
-    png_write(out, size, size, flatten(buf, size, size, bg_rgb))
+    png_write(out, size, size, buf if keep_alpha else flatten(buf, size, size, bg_rgb))
     return True
 
 
@@ -353,16 +370,20 @@ class Dock:
         self.images = {}          # (index, scale) -> PhotoImage
         self.scales = [1.0] * len(self.items)
         self.targets = [1.0] * len(self.items)
+        self.vel = [0.0] * len(self.items)      # 弹簧速度，做回弹
         self.layout = []          # [(x0, x1, index)]
         self.hover = -1
         self.animating = False
         self.menu = None
+        self.running = set()      # 正在运行的 item 下标 -> 画底部小点
+        self.exe_cache = {}
 
         self._setup_window()
         self._build_ui()
         self._load_icons()
         self._draw()
         root.after(120, self._animate)
+        root.after(800, self._scan_running)
 
     # -- 窗体 ------------------------------------------------------
     def _calc_pill_width(self):
@@ -378,8 +399,8 @@ class Dock:
         r.wm_attributes("-transparentcolor", MAGIC)
         r.configure(bg=MAGIC)
 
-        x, y = self._position()
-        r.geometry("%dx%d+%d+%d" % (self.width, self.height, x, y))
+        self.x, self.y = self._position()
+        r.geometry("%dx%d+%d+%d" % (self.width, self.height, self.x, self.y))
 
     def _position(self):
         rect = wt.RECT()
@@ -397,17 +418,56 @@ class Dock:
         self.canvas = tk.Canvas(self.root, width=self.width, height=self.height,
                                 bg=MAGIC, highlightthickness=0, bd=0)
         self.canvas.pack()
-
-        # 底板：圆角矩形（半径用平滑多边形近似）
-        x1, y1 = self.slack, self.grow
-        x2, y2 = self.slack + self.pill_w, self.height
-        self.canvas.create_polygon(self._round_rect(x1, y1, x2, y2, self.radius),
-                                   fill=cfg["bg"], outline=cfg["border"], width=1)
+        self._paint_plate()
 
         self.canvas.bind("<Motion>", self._on_motion)
         self.canvas.bind("<Button-1>", self._on_click)
         self.canvas.bind("<Button-3>", self._on_right)
         self.canvas.bind("<Leave>", lambda e: self._set_hover(-1))
+
+    def _paint_plate(self):
+        """底板：玻璃（桌面模糊）或纯色，圆角之外交给色键抠掉"""
+        c = self.canvas
+        c.delete("plate")
+        cfg = self.cfg
+        x1, y1 = self.slack, self.grow
+        w, h = self.pill_w, self.height - self.grow
+        theme = "dark" if str(cfg.get("bg", "")).upper() in ("#1F1F24", "#1F1F1F") else "light"
+
+        self.bg_img = None
+        self.plate_rgb = None
+        if cfg.get("glass", True) and backdrop is not None:
+            # 生成时要先把自己藏起来，否则会把旧底图拍进去
+            was = self.root.winfo_ismapped()
+            if was:
+                self.root.withdraw()
+                self.root.update()
+            try:
+                spec = GLASS.get(theme, GLASS["dark"])
+                png = os.path.join(HERE, "glass-%s-%dx%d.png" % (theme, w, h))
+                _p, avg = backdrop.make(png, self.x + x1, self.y + y1, w, h,
+                                        radius=self.radius,
+                                        tint=spec["tint"], opacity=spec["opacity"],
+                                        scale=5, blur=3, passes=4)
+                self.plate_rgb = avg
+                self.bg_img = tk.PhotoImage(file=png)
+                c.create_image(x1, y1, image=self.bg_img, anchor="nw", tags="plate")
+            except Exception as e:                       # noqa: BLE001
+                log("玻璃底生成失败: %s" % e)
+                self.bg_img = None
+            finally:
+                if was:
+                    self.root.deiconify()
+                    if cfg.get("topmost", True):
+                        self.root.attributes("-topmost", True)
+
+        if self.bg_img is None:
+            c.create_polygon(self._round_rect(x1, y1, x1 + w, y1 + h, self.radius),
+                             fill=cfg["bg"], outline="", tags="plate")
+        # 极淡的描边，给玻璃一个边界
+        c.create_polygon(self._round_rect(x1, y1, x1 + w, y1 + h, self.radius),
+                         fill="", width=1, tags="plate",
+                         outline="#4A4A55" if theme == "dark" else "#E4E4EA")
 
     @staticmethod
     def _round_rect(x1, y1, x2, y2, r):
@@ -425,7 +485,13 @@ class Dock:
     # -- 图标 ------------------------------------------------------
     def _load_icons(self):
         os.makedirs(ICON_DIR, exist_ok=True)
-        bg_rgb = hex_rgb(self.cfg["bg"])
+        theme = "dark" if str(self.cfg.get("bg", "")).upper() in ("#1F1F24", "#1F1F1F") else "light"
+        if self.cfg.get("glass", True) and getattr(self, "plate_rgb", None):
+            bg_rgb = self.plate_rgb            # 压平到玻璃实际色，图标边缘才不会有暗块
+        elif self.cfg.get("glass", True):
+            bg_rgb = GLASS.get(theme, GLASS["dark"])["tint"]
+        else:
+            bg_rgb = hex_rgb(self.cfg["bg"])
         src_size = self.icon * 2                      # 2 倍图，放大到 1.75 倍也够清晰
         for i, item in enumerate(self.items):
             target = item.get("target", "")
@@ -434,20 +500,22 @@ class Dock:
             if is_uri and not item.get("icon"):
                 self.images[i] = None
                 continue
-            key = hashlib.sha1(("%s|%s|%d" % (src, self.cfg["bg"], src_size)).encode("utf-8")).hexdigest()[:16]
+            key = hashlib.sha1(("%s|%s|%d|alpha" % (src, self.cfg["bg"], src_size)).encode("utf-8")).hexdigest()[:16]
             png = os.path.join(ICON_DIR, key + ".png")
             if not os.path.exists(png):
-                if not extract_icon_png(src, png, src_size, bg_rgb):
+                # Tk 8.6 支持带 alpha 的 PNG，保留透明通道，图标才能融进玻璃底
+                if not extract_icon_png(src, png, src_size, bg_rgb, keep_alpha=True):
                     log("图标提取失败: %s" % src)
                     png = None
             self.images[i] = png
 
     def _scaled(self, index, scale):
-        """按缩放倍数取（必要时生成）一张 PhotoImage；无图标返回 None"""
+        """按缩放倍数取（必要时生成）一张 PhotoImage；无图标返回 None。
+        用分数近似而不是固定档位，放大动画才连贯。"""
         from fractions import Fraction
-        step = min(SCALES, key=lambda s: abs(s - scale))
         cache = self.images.setdefault("_cache", {})
-        key = (index, step)
+        fr = Fraction(min(2.0, max(0.5, scale)) / 2.0).limit_denominator(14)
+        key = (index, fr)
         if key in cache:
             return cache[key]
         path = self.images.get(index)
@@ -455,7 +523,6 @@ class Dock:
             return None
         base = tk.PhotoImage(file=path)
         # 源图是 icon*2，显示 icon*scale 即按 scale/2 缩放
-        fr = Fraction(step / 2).limit_denominator(16)
         img = base.zoom(fr.numerator).subsample(fr.denominator)
         cache[key] = img
         return img
@@ -469,6 +536,8 @@ class Dock:
         total = sum(widths) + self.gap * max(0, len(self.items) - 1)
         x = (self.width - total) / 2.0
         self.layout = []
+        dark = str(self.cfg.get("bg", "")).upper() in ("#1F1F24", "#1F1F1F")
+        dot = "#FFFFFF" if dark else "#3A3A42"
         for i, w in enumerate(widths):
             img = self._scaled(i, self.scales[i])
             cx = x + w / 2.0
@@ -476,6 +545,9 @@ class Dock:
                 c.create_image(cx, baseline, image=img, anchor="s", tags="icon")
             else:
                 self._draw_tile(c, cx, w, baseline, i)
+            if i in self.running:                 # 运行中的小点
+                c.create_oval(cx - 2, baseline + 3, cx + 2, baseline + 6,
+                              fill=dot, outline="", tags="icon")
             self.layout.append((x, x + w, i))
             x += w + self.gap
 
@@ -490,6 +562,54 @@ class Dock:
                       font=("Microsoft YaHei UI", max(8, int(w * 0.4)), "bold"))
 
     # -- 交互 ------------------------------------------------------
+    def _exe_name(self, i, item):
+        """item 对应的进程名，用于判断是否在运行"""
+        if i in self.exe_cache:
+            return self.exe_cache[i]
+        exe = ""
+        try:
+            t = item.get("target", "")
+            if t.lower().endswith(".lnk"):
+                t = resolve_lnk(t) or t
+            if t.lower().endswith(".exe"):
+                exe = os.path.basename(t).lower()
+        except Exception:                            # noqa: BLE001
+            pass
+        self.exe_cache[i] = exe
+        return exe
+
+    def _scan_running(self):
+        """每 5 秒扫一次进程表，给正在运行的应用画个小点"""
+        try:
+            self.root.after(5000, self._scan_running)
+        except Exception:                            # noqa: BLE001
+            return
+
+        def job():
+            names = set()
+            try:
+                out = subprocess.run(["tasklist", "/fo", "csv", "/nh"],
+                                     capture_output=True, text=True, timeout=8,
+                                     creationflags=0x08000000).stdout
+                for line in out.splitlines():
+                    if line.startswith('"') and '","' in line:
+                        names.add(line.split('","')[0].strip('"').lower())
+            except Exception:                        # noqa: BLE001
+                return
+            run = set()
+            for i, item in enumerate(list(self.items)):
+                exe = self._exe_name(i, item)
+                if exe and exe in names:
+                    run.add(i)
+            if run != self.running:
+                self.running = run
+                try:
+                    self.root.after(0, self._draw)
+                except Exception:                    # noqa: BLE001
+                    pass
+
+        threading.Thread(target=job, daemon=True).start()
+
     def _index_at(self, x):
         for x0, x1, i in self.layout:
             if x0 <= x <= x1:
@@ -518,11 +638,13 @@ class Dock:
         moved = False
         for i in range(len(self.scales)):
             diff = self.targets[i] - self.scales[i]
-            if abs(diff) > 0.01:
-                self.scales[i] += diff * 0.35
+            self.vel[i] = self.vel[i] * 0.70 + diff * 0.30     # 欠阻尼弹簧：轻微回弹
+            self.scales[i] += self.vel[i]
+            if abs(diff) > 0.004 or abs(self.vel[i]) > 0.004:
                 moved = True
             else:
                 self.scales[i] = self.targets[i]
+                self.vel[i] = 0.0
         self._draw()
         if moved:
             self.root.after(16, self._animate)
@@ -600,6 +722,9 @@ class Dock:
         save_config(self.cfg)
         self.scales = [1.0] * len(self.items)
         self.targets = [1.0] * len(self.items)
+        self.vel = [0.0] * len(self.items)
+        self.exe_cache = {}
+        self.running = set()
         self.images = {}
         self.hover = -1
         self.pill_w = self._calc_pill_width()

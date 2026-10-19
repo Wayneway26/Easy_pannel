@@ -24,6 +24,7 @@ dock/dock.pid
 # Dock 运行时产物（图标缓存按机器生成，不入库）
 dock/icons/
 dock/shot.png
+dock/glass-*.png
 dock/config.json
 
 # 面板运行时产物

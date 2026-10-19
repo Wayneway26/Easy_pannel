@@ -37,13 +37,13 @@ DOCK_PID = os.path.join(DOCK_DIR, "dock.pid")
 TRAY_SCRIPT = os.path.join(HERE, "TrayGUI.pyw")
 ICON_CACHE = os.path.join(HERE, "cache", "panel-icons")
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 # ---------------------------------------------------------------- 调色板
 MAGIC = "#010203"            # 色键：窗口圆角外的部分靠它抠成真透明
 BG = "#F3F3F3"               # 窗口底
 CARD = "#FFFFFF"             # 卡片
-CARD_LINE = "#E8E8E8"        # 卡片描边
+CARD_LINE = "#EFEFEF"        # 卡片描边
 HAIRLINE = "#EFEFEF"         # 行分割线
 NAV_ACTIVE = "#FFFFFF"
 ROW_HOVER = "#F5F5F5"
@@ -496,8 +496,8 @@ class Panel:
         except tk.TclError:
             pass
         sw, sh = r.winfo_screenwidth(), r.winfo_screenheight()
-        x, y = (sw - W) // 2, max(16, (sh - H) // 2 - 24)
-        r.geometry("%dx%d+%d+%d" % (W, H, x, y))
+        self.wx, self.wy = (sw - W) // 2, max(16, (sh - H) // 2 - 24)
+        r.geometry("%dx%d+%d+%d" % (W, H, self.wx, self.wy))
         try:                                           # 任务栏图标复位（overrideredirect 会藏起来）
             r.wm_attributes("-toolwindow", False)
         except tk.TclError:
@@ -518,9 +518,26 @@ class Panel:
         r.protocol("WM_DELETE_WINDOW", self.quit_app)
 
     # -- 外壳 ------------------------------------------------------
+    def _paint_backdrop(self):
+        """Seelen 风格：窗口底做成磨砂玻璃（桌面模糊 + 浅色蒙层），卡片浮在上面"""
+        try:
+            import backdrop
+            png = os.path.join(HERE, "cache", "panel-glass.png")
+            os.makedirs(os.path.dirname(png), exist_ok=True)
+            backdrop.make(png, self.wx, self.wy, W, H, radius=10,
+                          tint=(250, 250, 254), opacity=0.78, scale=6, blur=4, passes=4)
+            self.bg_img = tk.PhotoImage(file=png)
+            self.cv.create_image(0, 0, image=self.bg_img, anchor="nw", tags="chrome")
+            return True
+        except Exception:                              # noqa: BLE001
+            return False
+
     def _draw_chrome(self):
         cv = self.cv
-        cv.create_polygon(round_rect(0, 0, W, H, 10), fill=BG, outline="#D8D8D8",
+        if not self._paint_backdrop():
+            cv.create_polygon(round_rect(0, 0, W, H, 10), fill=BG, outline="",
+                              tags="chrome")
+        cv.create_polygon(round_rect(0, 0, W, H, 10), fill="", outline="#D2D2D2",
                           width=1, tags="chrome")
 
         # 应用图标：三块错落的「面板」
@@ -571,7 +588,7 @@ class Panel:
     def card(self, y, h, title=None, pad=18):
         """一张设置卡片。title 按 WinUI 规范画在卡片**外面**上方。"""
         cv = self.cv
-        cv.create_polygon(round_rect(CX0, y, CX1, y + h, 6), fill=CARD,
+        cv.create_polygon(round_rect(CX0, y, CX1, y + h, 10), fill=CARD,
                           outline=CARD_LINE, width=1, tags="content")
         if title:
             cv.create_text(CX0 + 2, y - 16, text=title, anchor="w", fill=TEXT,
