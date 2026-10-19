@@ -23,10 +23,24 @@ Windows 小工具集：绿色免安装、纯本地运行、只改当前用户设
 
 窗口底同样是磨砂玻璃（Seelen 那种浮岛感），白色卡片浮在上面；玻璃烘焙失败时自动退回纯色底，不影响使用。
 
-字体和图标也用 Windows 11 自带的那一套，不是模拟：正文 **Segoe UI Variable Text**、
-标题 **Segoe UI Variable Display**（中文自动回退微软雅黑）、图标 **Segoe Fluent Icons**
-（导航、开关、行内按钮全是真字形，不是手绘几何）。全部用 tkinter 的 Canvas 自绘，
+字体按语言分开挑，不搞"一套字体包打天下"：
+
+| 用途 | 字体 |
+| --- | --- |
+| 中文正文 / 标题 | **Microsoft YaHei UI**（笔画饱满，长时间看不累） |
+| 纯英文、数字 | **Segoe UI**（比雅黑自带的西文干净得多） |
+| 英文大标题 | **Segoe UI Variable Display** |
+| 图标 | **Segoe Fluent Icons**（导航、开关、行内按钮全是真字形，不是手绘几何） |
+
+判据是字符串里有没有中日韩字符：`font_for()` 自动选。全部用 tkinter 的 Canvas 自绘，
 没有引入 WinUI 或任何第三方库。
+
+### 深色 / 浅色
+
+标题栏右上角的太阳按钮切换，整窗重绘一次（卡片、导航、文字、玻璃蒙层都跟着变）。
+选择写在 `panel.json` 里，下次打开还是这个模式。
+
+![深色模式](assets/panel-dark.png)
 
 | 页面 | 能做什么 |
 | --- | --- |

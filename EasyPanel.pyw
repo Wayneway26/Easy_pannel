@@ -39,37 +39,66 @@ ICON_CACHE = os.path.join(HERE, "cache", "panel-icons")
 KEYMAP_SCRIPT = os.path.join(HERE, "KeyMap.pyw")
 KEYMAP_CONFIG = os.path.join(HERE, "keymap.json")
 KEYMAP_PID = os.path.join(HERE, "keymap.pid")
+PANEL_CONFIG = os.path.join(HERE, "panel.json")
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 
 # ---------------------------------------------------------------- 调色板
 MAGIC = "#010203"            # 色键：窗口圆角外的部分靠它抠成真透明
-BG = "#F3F3F3"               # 窗口底
-CARD = "#FFFFFF"             # 卡片
-CARD_LINE = "#EFEFEF"        # 卡片描边
-HAIRLINE = "#EFEFEF"         # 行分割线
-NAV_ACTIVE = "#FFFFFF"
-ROW_HOVER = "#F5F5F5"
-TEXT = "#1A1A1A"
-MUTED = "#5D5D5D"
-FAINT = "#8A8A8A"
-ACCENT = "#0067C0"
-ACCENT_HOVER = "#1975C2"
-ACCENT_PRESS = "#005BA6"
-BTN = "#FDFDFD"
-BTN_LINE = "#D9D9D9"
-BTN_HOVER = "#F5F5F5"
-BTN_PRESS = "#EDEDED"
-TRACK_OFF = "#9A9A9A"
-DANGER = "#C42B1C"
-SEG_BG = "#F0F0F0"
-LOG_BG = "#FAFAFA"
-LOG_FG = "#2B2B2B"
 
-UI = "Segoe UI Variable Text"          # Win11 正文：西文原生，中文自动回退雅黑
-DISPLAY = "Segoe UI Variable Display"  # Win11 标题
-ICONS = "Segoe Fluent Icons"           # Win11 图标字形
-MONO = "Consolas"
+PALETTES = {
+    "light": {
+        "BG": "#F3F3F3", "CARD": "#FFFFFF", "CARD_LINE": "#EFEFEF",
+        "HAIRLINE": "#EFEFEF", "NAV_ACTIVE": "#FFFFFF", "ROW_HOVER": "#F5F5F5",
+        "TEXT": "#1A1A1A", "MUTED": "#5D5D5D", "FAINT": "#8A8A8A",
+        "ACCENT": "#0067C0", "ACCENT_HOVER": "#1975C2", "ACCENT_PRESS": "#005BA6",
+        "BTN": "#FDFDFD", "BTN_LINE": "#D9D9D9", "BTN_HOVER": "#F5F5F5",
+        "BTN_PRESS": "#EDEDED", "TRACK_OFF": "#9A9A9A", "SEG_BG": "#F0F0F0",
+        "SEG_CELL": "#FFFFFF", "DANGER": "#C42B1C",
+        "DANGER_BG": "#FDEDEB", "DANGER_PRESS": "#F9DAD6",
+        "DIS_FILL": "#F2F2F2", "DIS_LINE": "#E4E4E4", "DIS_FG": "#A8A8A8",
+        "LOG_BG": "#FAFAFA", "LOG_FG": "#2B2B2B",
+        "WIN_LINE": "#D2D2D2", "NAV_LINE": "#E4E4E4",
+        "GLASS_TINT": (250, 250, 254), "GLASS_OPACITY": 0.78,
+    },
+    "dark": {
+        "BG": "#202020", "CARD": "#2B2B2B", "CARD_LINE": "#3A3A3A",
+        "HAIRLINE": "#383838", "NAV_ACTIVE": "#2E2E2E", "ROW_HOVER": "#333333",
+        "TEXT": "#FFFFFF", "MUTED": "#C9C9C9", "FAINT": "#9C9C9C",
+        "ACCENT": "#4CC2FF", "ACCENT_HOVER": "#5FC9FF", "ACCENT_PRESS": "#3AA9E0",
+        "BTN": "#323232", "BTN_LINE": "#4A4A4A", "BTN_HOVER": "#3A3A3A",
+        "BTN_PRESS": "#2A2A2A", "TRACK_OFF": "#6A6A6A", "SEG_BG": "#1A1A1A",
+        "SEG_CELL": "#3A3A3A", "DANGER": "#FF99A4",
+        "DANGER_BG": "#4A2222", "DANGER_PRESS": "#5A2A2A",
+        "DIS_FILL": "#2A2A2A", "DIS_LINE": "#3A3A3A", "DIS_FG": "#777777",
+        "LOG_BG": "#1B1B1B", "LOG_FG": "#D6D6D6",
+        "WIN_LINE": "#3A3A3A", "NAV_LINE": "#3A3A3A",
+        "GLASS_TINT": (24, 24, 28), "GLASS_OPACITY": 0.74,
+    },
+}
+
+# 下面这些名字由 apply_palette() 动态写入，函数体里一律按全局查值
+BG = CARD = CARD_LINE = HAIRLINE = NAV_ACTIVE = ROW_HOVER = ""
+TEXT = MUTED = FAINT = ACCENT = ACCENT_HOVER = ACCENT_PRESS = ""
+BTN = BTN_LINE = BTN_HOVER = BTN_PRESS = TRACK_OFF = SEG_BG = SEG_CELL = ""
+DANGER = LOG_BG = LOG_FG = WIN_LINE = NAV_LINE = ""
+DANGER_BG = DANGER_PRESS = DIS_FILL = DIS_LINE = DIS_FG = ""
+GLASS_TINT, GLASS_OPACITY = (250, 250, 254), 0.78
+
+
+def apply_palette(name):
+    globals().update(PALETTES.get(name, PALETTES["light"]))
+
+
+apply_palette("light")
+
+# ---------------------------------------------------------------- 字体
+CJK = "Microsoft YaHei UI"             # 中文：微软雅黑，笔画最舒服
+EN = "Segoe UI"                        # 纯英文/数字：Segoe UI，比雅黑西文干净
+DISPLAY = "Segoe UI Variable Display"  # 英文大标题
+ICONS = "Segoe Fluent Icons"
+MONO = "Cascadia Mono"
+UI = CJK
 
 # ---------------------------------------------------------------- 布局
 W, H = 860, 792
@@ -78,25 +107,42 @@ CX0, CX1 = 232, 844          # 内容区：232 .. 844（宽 612）
 TITLE_H = 52
 
 
+def has_cjk(s):
+    for ch in str(s):
+        if "\u4e00" <= ch <= "\u9fff" or "\u3400" <= ch <= "\u4dbf":
+            return True
+    return False
+
+
+def font_for(text, size, weight="normal", big=False):
+    """中文走微软雅黑，纯英文/数字走 Segoe UI；混排按中文算（雅黑的西文也还看得过去）"""
+    weight = "bold" if weight == "bold" else weight
+    if has_cjk(text):
+        return (CJK, -int(size), weight)
+    if big:
+        return (DISPLAY, -int(size), weight)
+    return (EN, -int(size), weight)
+
+
 def f(size, weight="normal", family=None):
-    """负数字号 = 像素，跨缩放看起来更稳。family 传 None 时动态取当前 UI 字体。"""
+    """负数字号 = 像素，跨缩放看起来更稳"""
     return (family or UI, -int(size), weight)
 
 
 def ensure_fonts():
-    """Win10 上没有 Variable / Fluent Icons，回退到上一代，别显示成方块"""
-    global UI, DISPLAY, ICONS
+    """没有的字体回退到上一代，别显示成方块"""
+    global DISPLAY, ICONS, MONO
     try:
         import tkinter.font as tkfont
         fams = set(tkfont.families())
     except Exception:                                    # noqa: BLE001
         return
-    if UI not in fams:
-        UI = "Segoe UI" if "Segoe UI" in fams else "Microsoft YaHei UI"
     if DISPLAY not in fams:
-        DISPLAY = UI
+        DISPLAY = EN
     if ICONS not in fams:
         ICONS = "Segoe MDL2 Assets"
+    if MONO not in fams:
+        MONO = "Consolas"
 
 
 # ---------------------------------------------------------------- 基础图元
@@ -171,17 +217,17 @@ class Btn(Widget):
         self.bg = cv.create_polygon(round_rect(x, y, x + w, y + h, radius),
                                     fill=BTN, outline=BTN_LINE, width=1, tags="content")
         self.fg = cv.create_text(x + w / 2.0, y + h / 2.0, text=text,
-                                 fill=TEXT, font=f(size), tags="content")
+                                 fill=TEXT, font=font_for(text, size), tags="content")
         self._paint("normal")
 
     def _paint(self, state):
         if not self.enabled:
-            fill, line, fg = "#F2F2F2", "#E4E4E4", "#A8A8A8"
+            fill, line, fg = DIS_FILL, DIS_LINE, DIS_FG
         elif self.kind == "primary":
             fill = {"normal": ACCENT, "hover": ACCENT_HOVER, "press": ACCENT_PRESS}[state]
             line, fg = fill, "#FFFFFF"
         elif self.kind == "danger":
-            fill = {"normal": BTN, "hover": "#FDEDEB", "press": "#F9DAD6"}[state]
+            fill = {"normal": BTN, "hover": DANGER_BG, "press": DANGER_PRESS}[state]
             line, fg = BTN_LINE, DANGER
         else:
             fill = {"normal": BTN, "hover": BTN_HOVER, "press": BTN_PRESS}[state]
@@ -210,9 +256,9 @@ class Btn(Widget):
 
 
 class TitleBtn(Widget):
-    """标题栏上的最小化 / 关闭 —— tag 必须是 chrome，切页时不能被清掉"""
+    """标题栏上的按钮：最小化 / 关闭 / 主题切换"""
 
-    def __init__(self, cv, x, y, kind, cmd):
+    def __init__(self, cv, x, y, kind, cmd, glyph=None):
         self.cv, self.cmd = cv, cmd
         self.kind = kind
         self.danger = kind == "close"
@@ -224,12 +270,9 @@ class TitleBtn(Widget):
             self.bg = cv.create_rectangle(x, y - 4, x + 46, y + 40, fill=BG,
                                           outline="", tags="chrome")
         cx, cy = x + 23, y + 16
-        if self.danger:
-            self.marks = [cv.create_text(cx, cy, text="\ue8bb", fill=TEXT,
-                                         font=(ICONS, -11), tags="chrome")]
-        else:
-            self.marks = [cv.create_text(cx, cy, text="\ue921", fill=TEXT,
-                                         font=(ICONS, -11), tags="chrome")]
+        ch = glyph or ("\ue8bb" if self.danger else "\ue921")
+        self.marks = [cv.create_text(cx, cy, text=ch, fill=TEXT,
+                                     font=(ICONS, -11), tags="chrome")]
 
     def hover(self, on):
         if self.danger:
@@ -289,7 +332,7 @@ class Seg(Widget):
             cell = cv.create_polygon(round_rect(x1, y + 2, x1 + seg_w, y + h - 2, 4),
                                      fill="", outline="", tags="content")
             lb = cv.create_text(x1 + seg_w / 2.0, y + h / 2.0, text=text,
-                                fill=MUTED, font=f(12), tags="content")
+                                fill=MUTED, font=font_for(text, 12), tags="content")
             self.cells.append(cell)
             self.labels.append(lb)
         self._paint()
@@ -297,7 +340,7 @@ class Seg(Widget):
     def _paint(self):
         for i, cell in enumerate(self.cells):
             on = i == self.index
-            self.cv.itemconfig(cell, fill="#FFFFFF" if on else "")
+            self.cv.itemconfig(cell, fill=SEG_CELL if on else "")
             self.cv.itemconfig(self.labels[i], fill=TEXT if on else MUTED)
 
     def click(self, x, y):
@@ -319,7 +362,7 @@ class Stepper(Widget):
         self.box = (x, y, x + w, y + h)
         self.w, self.h = w, h
         cv.create_polygon(round_rect(x, y, x + w, y + h, 5),
-                          fill="#FFFFFF", outline=BTN_LINE, width=1, tags="content")
+                          fill=BTN, outline=BTN_LINE, width=1, tags="content")
         cy = y + h / 2.0
         self.zone = []
         for i, glyph in enumerate(("-", "+")):
@@ -331,7 +374,7 @@ class Stepper(Widget):
                 cv.create_line(zx + 14, cy - 5, zx + 14, cy + 5, fill=TEXT, width=1.1, tags="content")
             self.zone.append(z)
         self.label = cv.create_text(x + w / 2.0, cy, text=text, fill=TEXT,
-                                    font=f(13), tags="content")
+                                    font=font_for(text, 13), tags="content")
 
     def set_text(self, s):
         self.cv.itemconfig(self.label, text=s)
@@ -358,7 +401,7 @@ class NavItem(Widget):
                                      fill="", outline="", tags="ui")
         self.icon = nav_icon(cv, x + 28, y + h / 2.0, icon, MUTED)
         self.label = cv.create_text(x + 48, y + h / 2.0, text=label, anchor="w",
-                                    fill=TEXT, font=f(13.5), tags="ui")
+                                    fill=TEXT, font=font_for(label, 13.5), tags="ui")
         self.active = False
 
     def set_active(self, on):
@@ -391,7 +434,7 @@ class AppRow(Widget):
         item = panel.dock_cfg["items"][index]
         self.thumb = panel.row_icon(item, x + 8, y + (h - 22) / 2.0)
         cv.create_text(x + 42, y + h / 2.0, text=item.get("name") or "未命名",
-                       anchor="w", fill=TEXT, font=f(12.5), tags="content")
+                       anchor="w", fill=TEXT, font=font_for(item.get("name") or "未命名", 12.5), tags="content")
         self.btns = []
         for i, (glyph, cb, title) in enumerate((
                 ("up", lambda: panel.move_item(index, -1), "上移"),
@@ -425,7 +468,7 @@ class SmallIcon(Widget):
                                    font=(ICONS, -11), tags="content")
 
     def hover(self, on):
-        self.cv.itemconfig(self.bg, fill="#E8E8E8" if on else "")
+        self.cv.itemconfig(self.bg, fill=ROW_HOVER if on else "")
 
     def click(self, x, y):
         self.cmd()
@@ -446,6 +489,9 @@ class Panel:
     def __init__(self, root):
         self.root = root
         ensure_fonts()
+        self.pcfg = self._read_panel_cfg()
+        self.theme = self.pcfg.get("theme", "light")
+        apply_palette(self.theme)
         self.dock = load_module(DOCK_SCRIPT, "easy_dock")
         self.tray = load_module(TRAY_SCRIPT, "tray_core")
         self.dock_cfg = self._read_dock_cfg()
@@ -471,6 +517,23 @@ class Panel:
         self.root.after(600, self._poll_dock_state)
 
     # -- 基础 ------------------------------------------------------
+    def _read_panel_cfg(self):
+        try:
+            with open(PANEL_CONFIG, encoding="utf-8") as fh:
+                cfg = json.load(fh)
+        except (OSError, ValueError):
+            cfg = {}
+        if cfg.get("theme") not in ("light", "dark"):
+            cfg["theme"] = "light"
+        return cfg
+
+    def save_panel_cfg(self):
+        try:
+            with open(PANEL_CONFIG, "w", encoding="utf-8") as fh:
+                json.dump(self.pcfg, fh, ensure_ascii=False, indent=2)
+        except OSError:
+            pass
+
     def _read_dock_cfg(self):
         if self.dock:
             try:
@@ -544,10 +607,11 @@ class Panel:
         """Seelen 风格：窗口底做成磨砂玻璃（桌面模糊 + 浅色蒙层），卡片浮在上面"""
         try:
             import backdrop
-            png = os.path.join(HERE, "cache", "panel-glass.png")
+            png = os.path.join(HERE, "cache", "panel-glass-%s.png" % self.theme)
             os.makedirs(os.path.dirname(png), exist_ok=True)
             backdrop.make(png, self.wx, self.wy, W, H, radius=10,
-                          tint=(250, 250, 254), opacity=0.78, scale=6, blur=4, passes=4)
+                          tint=GLASS_TINT, opacity=GLASS_OPACITY,
+                          scale=6, blur=4, passes=4)
             self.bg_img = tk.PhotoImage(file=png)
             self.cv.create_image(0, 0, image=self.bg_img, anchor="nw", tags="chrome")
             return True
@@ -559,7 +623,7 @@ class Panel:
         if not self._paint_backdrop():
             cv.create_polygon(round_rect(0, 0, W, H, 10), fill=BG, outline="",
                               tags="chrome")
-        cv.create_polygon(round_rect(0, 0, W, H, 10), fill="", outline="#D2D2D2",
+        cv.create_polygon(round_rect(0, 0, W, H, 10), fill="", outline=WIN_LINE,
                           width=1, tags="chrome")
 
         # 应用图标：三块错落的「面板」
@@ -568,10 +632,9 @@ class Panel:
         cv.create_polygon(round_rect(25, 30, 31, 34, 1.2), fill="#FFFFFF", outline="", tags="chrome")
         cv.create_polygon(round_rect(33, 21, 35, 34, 1.0), fill="#FFFFFF", outline="", tags="chrome")
         cv.create_text(50, 26, text="EasyPanel", anchor="w", fill=TEXT,
-                       font=f(13.5, "bold", DISPLAY), tags="chrome")
-        cv.create_text(W - 116, 26, text="v" + VERSION, anchor="e", fill=FAINT,
-                       font=f(10.5), tags="chrome")
+                       font=font_for("EasyPanel", 13.5, "bold", big=True), tags="chrome")
 
+        self.chrome_widgets.append(TitleBtn(cv, W - 138, 8, "theme", self.toggle_theme, "\ue706"))
         self.chrome_widgets.append(TitleBtn(cv, W - 92, 8, "min", self.minimize))
         self.chrome_widgets.append(TitleBtn(cv, W - 46, 8, "close", self.quit_app))
 
@@ -589,7 +652,7 @@ class Panel:
             y += 44
 
         cv.create_line(NAV_X + 12, 58 + 5 * 44, NAV_X + NAV_W - 12,
-                       58 + 5 * 44, fill="#E4E4E4", tags="ui")
+                       58 + 5 * 44, fill=NAV_LINE, tags="ui")
 
     # -- 页面切换 --------------------------------------------------
     def show_page(self, key):
@@ -618,16 +681,16 @@ class Panel:
                           outline=CARD_LINE, width=1, tags="content")
         if title:
             cv.create_text(CX0 + 2, y - 16, text=title, anchor="w", fill=TEXT,
-                           font=f(13.5, "bold", DISPLAY), tags="content")
+                           font=font_for(title, 13.5, "bold", big=True), tags="content")
         return y
 
     def label(self, x, y, text, size=13.5, color=TEXT, weight="normal", anchor="w"):
         return self.cv.create_text(x, y, text=text, anchor=anchor, fill=color,
-                                   font=f(size, weight), tags="content")
+                                   font=font_for(text, size, weight), tags="content")
 
     def page_head(self, title, subtitle):
         self.cv.create_text(CX0 - 4, 78, text=title, anchor="w", fill=TEXT,
-                            font=f(26, "bold", DISPLAY), tags="content")
+                            font=font_for(title, 26, "bold", big=True), tags="content")
         self.label(CX0 - 4, 108, subtitle, 12, MUTED)
 
     def row_text(self, y, title, desc=None):
@@ -737,9 +800,9 @@ class Panel:
             cv.create_polygon(round_rect(x, 126, x + cw, 202, 8), fill=CARD,
                               outline=CARD_LINE, width=1, tags="content")
             cv.create_text(x + 18, 158, text=str(num), anchor="w", fill=color,
-                           font=f(26, "bold"), tags="content")
+                           font=font_for(str(num), 26, "bold"), tags="content")
             cv.create_text(x + 18, 184, text=label, anchor="w", fill=MUTED,
-                           font=f(11.5), tags="content")
+                           font=font_for(label, 11.5), tags="content")
 
         # 操作卡
         self.card(240, 92, "批量操作")
@@ -895,7 +958,7 @@ class Panel:
         cv.create_text(CX0 + 47, 172, text="\ue71d", fill="#FFFFFF",
                        font=(ICONS, -30), tags="content")
         self.cv.create_text(CX0 + 90, 156, text="EasyPanel", anchor="w", fill=TEXT,
-                            font=f(19, "bold", DISPLAY), tags="content")
+                            font=font_for("EasyPanel", 19, "bold", big=True), tags="content")
         self.label(CX0 + 90, 180, "版本 " + VERSION + " · MIT License", 11.5, MUTED)
         self.label(CX0 + 90, 200, "Python 3 + tkinter，无第三方依赖", 12, MUTED)
         self.label(CX0 + 90, 220, "github.com/Wayneway26/Easy_pannel", 11.5, ACCENT)
@@ -996,6 +1059,34 @@ class Panel:
             os.startfile("https://github.com/Wayneway26/Easy_pannel")
         except Exception:                              # noqa: BLE001
             pass
+
+    # ---------------------------------------------------------- 主题
+    def toggle_theme(self):
+        self.theme = "dark" if self.theme == "light" else "light"
+        self.pcfg["theme"] = self.theme
+        self.save_panel_cfg()
+        self._rebuild_ui()
+
+    def _rebuild_ui(self):
+        """换主题：颜色是全局的，整套控件要重建一遍"""
+        apply_palette(self.theme)
+        for w in self.proxy:
+            try:
+                w.destroy()
+            except Exception:                          # noqa: BLE001
+                pass
+        self.proxy = []
+        self.widgets = []
+        self.chrome_widgets = []
+        self.log_box = None
+        self.row_icons = {}
+        self.hot = None
+        self.drag = None
+        self.cv.delete("all")
+        self.cv.configure(bg=MAGIC)
+        self.root.configure(bg=MAGIC)
+        self._draw_chrome()
+        self.show_page(self.page)
 
     # ---------------------------------------------------------- Dock 控制
     def dock_pid(self):
@@ -1278,7 +1369,7 @@ class Panel:
         if img is not None:
             return cv.create_image(x + 11, y + 11, image=img, tags="content")
         return cv.create_polygon(round_rect(x, y, x + 22, y + 22, 6),
-                                 fill="#E4E4E4", outline="", tags="content")
+                                 fill=BTN_LINE, outline="", tags="content")
 
     def _icon_photo(self, src):
         if not src or self.dock is None:
