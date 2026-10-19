@@ -27,6 +27,11 @@ dock/shot.png
 dock/glass-*.png
 dock/config.json
 
+# 快捷键引擎运行时产物（含用户自己的规则，不入库）
+keymap.json
+keymap.pid
+keymap.log
+
 # 面板运行时产物
 cache/
 _shots.py

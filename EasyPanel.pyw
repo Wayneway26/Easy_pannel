@@ -36,8 +36,11 @@ DOCK_CONFIG = os.path.join(DOCK_DIR, "config.json")
 DOCK_PID = os.path.join(DOCK_DIR, "dock.pid")
 TRAY_SCRIPT = os.path.join(HERE, "TrayGUI.pyw")
 ICON_CACHE = os.path.join(HERE, "cache", "panel-icons")
+KEYMAP_SCRIPT = os.path.join(HERE, "KeyMap.pyw")
+KEYMAP_CONFIG = os.path.join(HERE, "keymap.json")
+KEYMAP_PID = os.path.join(HERE, "keymap.pid")
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 # ---------------------------------------------------------------- 调色板
 MAGIC = "#010203"            # 色键：窗口圆角外的部分靠它抠成真透明
@@ -431,7 +434,8 @@ class SmallIcon(Widget):
 def nav_icon(cv, cx, cy, kind, color):
     """导航图标用 Segoe Fluent Icons 字形，和 Win11 设置页同一套图标。
     返回值保持 (实心图形, 描边图形) 的结构，方便上层统一改色。"""
-    glyph = {"dock": "\ue71d", "tray": "\ue7f4", "info": "\ue946"}.get(kind, "\ue946")
+    glyph = {"dock": "\ue71d", "tray": "\ue8fd", "info": "\ue946",
+             "key": "\ue765", "taskbar": "\ue7f4"}.get(kind, "\ue946")
     item = cv.create_text(cx, cy, text=glyph, fill=color,
                           font=(ICONS, -16), tags="ui")
     return [item], []
@@ -445,6 +449,7 @@ class Panel:
         self.dock = load_module(DOCK_SCRIPT, "easy_dock")
         self.tray = load_module(TRAY_SCRIPT, "tray_core")
         self.dock_cfg = self._read_dock_cfg()
+        self.keymap_cfg = self._read_keymap_cfg()
         self.page = "dock"
         self.widgets = []                 # 页面控件（切页清空）
         self.chrome_widgets = []          # 标题栏 + 导航（永不清空）
@@ -485,6 +490,23 @@ class Panel:
                 pass
         with open(DOCK_CONFIG, "w", encoding="utf-8") as fh:
             json.dump(self.dock_cfg, fh, ensure_ascii=False, indent=2)
+
+    def _read_keymap_cfg(self):
+        try:
+            with open(KEYMAP_CONFIG, encoding="utf-8") as fh:
+                cfg = json.load(fh)
+        except (OSError, ValueError):
+            cfg = {}
+        cfg.setdefault("enabled", False)
+        cfg.setdefault("rules", [])
+        return cfg
+
+    def save_keymap_cfg(self):
+        try:
+            with open(KEYMAP_CONFIG, "w", encoding="utf-8") as fh:
+                json.dump(self.keymap_cfg, fh, ensure_ascii=False, indent=2)
+        except OSError:
+            pass
 
     def _setup_window(self):
         r = self.root
@@ -555,16 +577,19 @@ class Panel:
 
         # 左侧导航
         self.nav = {}
-        y = 66
+        y = 58
         for key, label, icon in (("dock", "Dock", "dock"),
                                  ("tray", "托盘图标", "tray"),
+                                 ("keymap", "快捷键", "key"),
+                                 ("taskbar", "任务栏", "taskbar"),
                                  ("about", "关于", "info")):
             item = NavItem(cv, NAV_X, y, NAV_W, 42, key, label, icon, self.show_page)
             self.nav[key] = item
             self.chrome_widgets.append(item)
             y += 44
 
-        cv.create_line(NAV_X + 12, 212, NAV_X + NAV_W - 12, 212, fill="#E4E4E4", tags="ui")
+        cv.create_line(NAV_X + 12, 58 + 5 * 44, NAV_X + NAV_W - 12,
+                       58 + 5 * 44, fill="#E4E4E4", tags="ui")
 
     # -- 页面切换 --------------------------------------------------
     def show_page(self, key):
@@ -582,6 +607,7 @@ class Panel:
         for k, item in self.nav.items():
             item.set_active(k == key)
         {"dock": self._page_dock, "tray": self._page_tray,
+         "keymap": self._page_keymap, "taskbar": self._page_taskbar,
          "about": self._page_about}[key]()
 
     # -- 通用绘制小工具 --------------------------------------------
@@ -749,6 +775,114 @@ class Panel:
             self._insert_log(level, msg)
         if not self.log_history:
             self.log("面板已就绪 · " + time.strftime("%Y-%m-%d %H:%M"))
+
+    # ---------------------------------------------------------- 快捷键
+    def _page_keymap(self):
+        self.page_head("快捷键", "全局按键重映射 · 按下左边，系统收到右边")
+        cv = self.cv
+        rules = self.keymap_cfg.get("rules") or []
+        alive = self.keymap_pid() is not None
+
+        # 状态卡
+        self.card(126, 80)
+        cv.create_polygon(round_rect(CX0 + 18, 144, CX0 + 62, 188, 11),
+                          fill="#2B2B31", outline="", tags="content")
+        cv.create_text(CX0 + 40, 166, text="\ue765", fill="#FFFFFF",
+                       font=(ICONS, -20), tags="content")
+        self.label(CX0 + 78, 156, "按键重映射引擎", 14, TEXT, "bold")
+        self.label(CX0 + 78, 178,
+                   ("已启用 · %d 条规则" % len(rules)) if alive
+                   else "未启用 · 点「启用」后立即生效", 11.5, MUTED)
+        self.btn_km = Btn(cv, CX1 - 18 - 100, 148, 100, 32,
+                          "停止" if alive else "启用", self.toggle_keymap,
+                          "secondary" if alive else "primary")
+        self.widgets.append(self.btn_km)
+
+        # 规则列表
+        top = 244
+        rows = rules[:6]
+        h = max(1, len(rows)) * 46 + 20
+        self.card(top, h, "映射规则")
+        if not rows:
+            self.label(CX0 + 18, top + 30, "还没有规则", 12.5, MUTED)
+            self.label(CX0 + 18, top + 52, "在下面填一个，比如 ctrl+c → alt+c", 11.5, FAINT)
+        for i, rule in enumerate(rows):
+            y = top + 8 + i * 46
+            self.label(CX0 + 18, y + 23, str(rule.get("from", "")), 13.5, TEXT)
+            self.label(CX0 + 168, y + 23, "→", 14, FAINT)
+            self.label(CX0 + 200, y + 23, str(rule.get("to", "")), 13.5, ACCENT)
+            self.widgets.append(Btn(cv, CX1 - 18 - 56, y + 9, 56, 28, "删除",
+                                    lambda i=i: self.del_rule(i), "secondary", 4, 11.5))
+            if i < len(rows) - 1:
+                self.hairline(y + 46)
+
+        # 新增一行
+        ay = top + h + 30
+        self.label(CX0, ay + 9, "新增", 12, FAINT)
+        e1 = tk.Entry(cv, bd=0, highlightthickness=1, highlightbackground=BTN_LINE,
+                      highlightcolor=ACCENT, bg="#FFFFFF", fg=TEXT,
+                      font=(UI, -13), insertbackground=TEXT)
+        e1.insert(0, "ctrl+c")
+        cv.create_window(CX0 + 52, ay, window=e1, anchor="nw", width=148, height=32,
+                         tags="content")
+        self.proxy.append(e1)
+        self.e_from = e1
+
+        self.label(CX0 + 212, ay + 16, "→", 14, FAINT)
+        e2 = tk.Entry(cv, bd=0, highlightthickness=1, highlightbackground=BTN_LINE,
+                      highlightcolor=ACCENT, bg="#FFFFFF", fg=TEXT,
+                      font=(UI, -13), insertbackground=TEXT)
+        e2.insert(0, "alt+c")
+        cv.create_window(CX0 + 242, ay, window=e2, anchor="nw", width=148, height=32,
+                         tags="content")
+        self.proxy.append(e2)
+        self.e_to = e2
+
+        self.widgets.append(Btn(cv, CX0 + 410, ay, 76, 32, "添加",
+                                self.add_rule, "primary", 4, 12.5))
+
+        self.label(CX0, ay + 58, "支持 ctrl / alt / shift / win 与字母、数字、F1–F12、方向键；组合要写全，如 ctrl+shift+c。",
+                   11, FAINT)
+        self.label(CX0, ay + 78, "规则对全局生效，会覆盖系统和其他软件的默认快捷键；只匹配修饰键完全一致的组合。",
+                   11, FAINT)
+
+    # ---------------------------------------------------------- 任务栏
+    def _page_taskbar(self):
+        self.page_head("任务栏", "隐藏 Windows 底部任务栏 · 由 Dock 接管")
+        cv = self.cv
+        visible = self.taskbar_visible()
+
+        self.card(126, 80)
+        cv.create_polygon(round_rect(CX0 + 18, 144, CX0 + 62, 188, 11),
+                          fill="#2B2B31", outline="", tags="content")
+        cv.create_text(CX0 + 40, 166, text="\ue7f4", fill="#FFFFFF",
+                       font=(ICONS, -20), tags="content")
+        self.label(CX0 + 78, 156, "Windows 任务栏", 14, TEXT, "bold")
+        self.label(CX0 + 78, 178,
+                   "当前显示在屏幕底部" if visible else "已隐藏 · 底部交给 Dock",
+                   11.5, MUTED)
+        self.btn_tb = Btn(cv, CX1 - 18 - 100, 148, 100, 32,
+                          "隐藏" if visible else "恢复", self.toggle_taskbar,
+                          "secondary" if visible else "primary")
+        self.widgets.append(self.btn_tb)
+
+        self.card(234, 136, "说明")
+        tips = ["隐藏的是任务栏窗口本身（Shell_TrayWnd），explorer.exe 和桌面图标都不受影响。",
+                "工作区不会自动扩展，Dock 仍然贴在原来的任务栏上方。",
+                "接了多显示器时，副屏任务栏会一起隐藏 / 恢复。",
+                "Dock 没在运行时隐藏任务栏，底部会空一块——先启动 Dock 再隐藏。"]
+        for i, s in enumerate(tips):
+            y = 262 + i * 30
+            cv.create_oval(CX0 + 19, y - 3, CX0 + 24, y + 2, fill=ACCENT,
+                           outline="", tags="content")
+            self.label(CX0 + 34, y, s, 11.5, TEXT)
+
+        self.card(400, 116, "万一面板也被关掉")
+        self.label(CX0 + 18, 432, "双击仓库里的「恢复桌面.bat」，它会重启资源管理器并显示任务栏。",
+                   12, TEXT)
+        self.label(CX0 + 18, 456, "也可以按 Ctrl+Shift+Esc 打开任务管理器 → 运行新任务 → explorer.exe。",
+                   12, TEXT)
+        self.label(CX0 + 18, 488, "隐藏是不写注册表的临时状态，重启电脑会自动恢复。", 11, FAINT)
 
     # ---------------------------------------------------------- 关于
     def _page_about(self):
@@ -979,6 +1113,139 @@ class Panel:
         except Exception:                              # noqa: BLE001
             pass
 
+    # ---------------------------------------------------------- 按键映射
+    def _pid_alive(self, path):
+        """读 pid 文件并确认进程还活着"""
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path) as fh:
+                pid = int(fh.read().strip())
+        except (OSError, ValueError):
+            return None
+        k32 = ctypes.windll.kernel32
+        k32.OpenProcess.restype = c_void_p
+        h = k32.OpenProcess(0x1000, False, pid)
+        if not h:
+            return None
+        code = c_ulong()
+        k32.GetExitCodeProcess(c_void_p(h), byref(code))
+        k32.CloseHandle(c_void_p(h))
+        if code.value != 259:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            return None
+        return pid
+
+    def keymap_pid(self):
+        return self._pid_alive(KEYMAP_PID)
+
+    def start_keymap(self):
+        self.save_keymap_cfg()
+        base = 0x00000008 | 0x00000200                 # DETACHED | NEW_PROCESS_GROUP
+        for flags in (base | 0x01000000, base, 0):
+            try:
+                subprocess.Popen([pythonw(), KEYMAP_SCRIPT], cwd=HERE, close_fds=True,
+                                 creationflags=flags,
+                                 stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+                return True
+            except OSError:
+                continue
+        return False
+
+    def stop_keymap(self):
+        pid = self.keymap_pid()
+        if pid:
+            subprocess.run(["taskkill", "/f", "/pid", str(pid)],
+                           capture_output=True, timeout=10)
+        try:
+            os.remove(KEYMAP_PID)
+        except OSError:
+            pass
+
+    def toggle_keymap(self):
+        alive = self.keymap_pid() is not None
+        self.keymap_cfg["enabled"] = not alive
+        if alive:
+            self.stop_keymap()
+        else:
+            if not self.start_keymap():
+                self.keymap_cfg["enabled"] = False
+                self.save_keymap_cfg()
+                return
+        self.root.after(450, lambda: self.show_page("keymap"))
+
+    def add_rule(self):
+        def val(attr):
+            w = getattr(self, attr, None)
+            try:
+                return w.get().strip().lower() if w is not None else ""
+            except Exception:                          # noqa: BLE001
+                return ""
+        a, b = val("e_from"), val("e_to")
+        if not a or not b:
+            return
+        rules = self.keymap_cfg.setdefault("rules", [])
+        if len(rules) >= 12:
+            return
+        rules.append({"from": a, "to": b})
+        self.save_keymap_cfg()
+        if self.keymap_pid():
+            self.stop_keymap()
+            self.root.after(220, self.start_keymap)
+        self.root.after(420, lambda: self.show_page("keymap"))
+
+    def del_rule(self, i):
+        rules = self.keymap_cfg.get("rules") or []
+        if 0 <= i < len(rules):
+            rules.pop(i)
+            self.save_keymap_cfg()
+            if self.keymap_pid():
+                self.stop_keymap()
+                self.root.after(220, self.start_keymap)
+            self.root.after(420, lambda: self.show_page("keymap"))
+
+    # ---------------------------------------------------------- 任务栏
+    def _taskbar_hwnd(self):
+        u32 = ctypes.windll.user32
+        u32.FindWindowW.restype = c_void_p
+        u32.FindWindowW.argtypes = [wt.LPCWSTR, wt.LPCWSTR]
+        u32.FindWindowExW.restype = c_void_p
+        u32.FindWindowExW.argtypes = [c_void_p, c_void_p, wt.LPCWSTR, wt.LPCWSTR]
+        handles = []
+        h = u32.FindWindowW("Shell_TrayWnd", None)
+        if h:
+            handles.append(h)
+        h2 = u32.FindWindowW("Shell_SecondaryTrayWnd", None)
+        guard = 0
+        while h2 and guard < 8:                        # 多显示器
+            handles.append(h2)
+            h2 = u32.FindWindowExW(None, c_void_p(h2), "Shell_SecondaryTrayWnd", None)
+            guard += 1
+        return handles
+
+    def taskbar_visible(self):
+        u32 = ctypes.windll.user32
+        for h in self._taskbar_hwnd():
+            return bool(u32.IsWindowVisible(c_void_p(h)))
+        return False
+
+    def set_taskbar(self, visible):
+        u32 = ctypes.windll.user32
+        u32.ShowWindow.argtypes = [c_void_p, ctypes.c_int]
+        u32.ShowWindow.restype = wt.BOOL
+        for h in self._taskbar_hwnd():
+            u32.ShowWindow(c_void_p(h), 5 if visible else 0)   # SW_SHOW / SW_HIDE
+
+    def toggle_taskbar(self):
+        self.set_taskbar(not self.taskbar_visible())
+        self.root.after(150, lambda: self.show_page("taskbar"))
+
+    # ---------------------------------------------------------- 设置
     def bump(self, key, delta):
         cfg = self.dock_cfg
         if key == "icon_size":
